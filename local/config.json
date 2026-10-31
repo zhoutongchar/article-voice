@@ -1,0 +1,39 @@
+{
+  "port": 4318,
+  "pipeline": "qwen3-mlx-audio-0.6.3-fixed-reference-v2",
+  "model": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit",
+  "revision": "37e955a1deb861c088ae5f3a67043185f3d1a60c",
+  "referenceModel": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-4bit",
+  "referenceRevision": "f35faf19b0cc2160865af64ecf0f22f83d335135",
+  "reference": {
+    "version": "native-narrator-v1",
+    "seed": 1729,
+    "temperature": 0.7,
+    "instruct": "Speak in a calm, clear, natural narration voice, with steady pitch and pace. Use your normal native accent.",
+    "texts": {
+      "en": "Take a moment to listen. A familiar voice makes a long article easier to follow. I will read clearly and calmly, keeping a steady pace from one paragraph to the next.",
+      "zh": "请静下心来听一听。熟悉的声音让长篇文章更容易理解。我会清晰、平静地朗读，保持自然的语调和稳定的节奏，陪你读完每一个段落。",
+      "ja": "少し耳を傾けてください。聞き慣れた声なら、長い文章も理解しやすくなります。自然で落ち着いた声で、最後まで同じペースで読み進めます。",
+      "ko": "잠시 귀를 기울여 주세요. 익숙한 목소리는 긴 글을 이해하는 데 도움이 됩니다. 자연스럽고 차분한 목소리로 처음부터 끝까지 일정한 속도로 읽겠습니다."
+    }
+  },
+  "generation": { "temperature": 0.7, "top_p": 0.9, "repetition_penalty": 1.5 },
+  "aligner": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
+  "alignerRevision": "0e1a68e91d815300c7c9754b2a7639378b23db15",
+  "languages": {
+    "en": "English", "zh": "Chinese", "es": "Spanish", "fr": "French",
+    "de": "German", "ja": "Japanese", "ko": "Korean", "pt": "Portuguese",
+    "it": "Italian", "ru": "Russian"
+  },
+  "voices": [
+    { "id": "Ryan", "name": "Ryan", "gender": "masculine", "language": "en", "description": "Dynamic English male voice with strong rhythmic drive. Expressive narration." },
+    { "id": "Aiden", "name": "Aiden", "gender": "masculine", "language": "en", "description": "Sunny American male voice with a clear midrange. Conversational narration." },
+    { "id": "Vivian", "name": "Vivian", "gender": "feminine", "language": "zh", "description": "Bright, slightly edgy young Chinese female voice. Expressive." },
+    { "id": "Serena", "name": "Serena", "gender": "feminine", "language": "zh", "description": "Warm, gentle Chinese female voice. Calm narration." },
+    { "id": "Uncle_Fu", "name": "Uncle Fu", "gender": "masculine", "language": "zh", "description": "Seasoned Chinese male voice with a low, mellow timbre. Warm narration." },
+    { "id": "Dylan", "name": "Dylan", "gender": "masculine", "language": "zh", "description": "Youthful Beijing male voice with a clear, natural timbre. Conversational." },
+    { "id": "Eric", "name": "Eric", "gender": "masculine", "language": "zh", "description": "Lively Chengdu male voice with slightly husky brightness. Expressive." },
+    { "id": "Ono_Anna", "name": "Ono Anna", "gender": "feminine", "language": "ja", "description": "Playful Japanese female voice with a light, nimble timbre. Expressive." },
+    { "id": "Sohee", "name": "Sohee", "gender": "feminine", "language": "ko", "description": "Warm Korean female voice with rich emotion. Expressive narration." }
+  ]
+}

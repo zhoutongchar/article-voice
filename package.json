@@ -1,0 +1,25 @@
+{
+  "name": "article-voice",
+  "version": "0.2.3",
+  "private": true,
+  "type": "module",
+  "description": "Read web articles with Cartesia or local Qwen3-TTS voices, word highlighting and pitch-preserving 3× playback.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev-server.mjs",
+    "local": ".venv/bin/python local/server.py",
+    "local:setup": "uv venv --allow-existing --python 3.12 .venv && uv pip install --python .venv/bin/python -r local/requirements-lock.txt",
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@mozilla/readability": "0.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "packageManager": "npm@11.19.1",
+  "engines": {
+    "node": ">=22"
+  }
+}
