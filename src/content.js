@@ -140,7 +140,10 @@ export function mountReader({ openFrame, onRequest, sourceAdapter, recognize = r
   const handle = message => {
     if (message.type === 'article') {
       source ||= new SourceHost(sourceAdapter || createSource({ document, url: new URL(location.href), recognize,
-        onChange: () => { clear(); Promise.resolve(sendEvent({ type: 'source-changed' })).catch(() => {}); } }));
+        onChange: event => {
+          clear();
+          if (event?.type !== 'repaint') Promise.resolve(sendEvent({ type: 'source-changed', reason: event?.reason })).catch(() => {});
+        } }));
       return source.open().then(value => article = value);
     }
     if (message.type === 'source-next') return source.prepareNext(message.after);

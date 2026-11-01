@@ -27,7 +27,8 @@ async function render() {
     ctx.fillText(line, 100, y); y += 160;
   }
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-  const image = document.querySelector('#kr-renderer img'), previous = image.src;
+  const previousImage = document.querySelector('#kr-renderer img'), previous = previousImage.src;
+  const image = previousImage.cloneNode(); previousImage.replaceWith(image);
   image.src = URL.createObjectURL(blob); await image.decode();
   // The production Kindle renderer revokes decoded image URLs immediately.
   URL.revokeObjectURL(image.src);
@@ -75,7 +76,10 @@ async function openReader() {
   const local = new URL(location.href).searchParams.has('local');
   if (local) document.getElementById('mode').textContent = 'Actual Apple Vision OCR and real local Qwen through the app-managed speech engine.';
   adapter = createKindleSource({ document, url: new URL('https://read.amazon.com/?asin=public-test-book'), recognize,
-    onChange: () => reader?.frame.contentWindow.postMessage({ channel: 'article-voice-event', message: { type: 'source-changed' } }, location.origin) });
+    onChange: event => {
+      if (event?.type !== 'repaint') reader?.frame.contentWindow?.postMessage({ channel: 'article-voice-event',
+        message: { type: 'source-changed', reason: event?.reason } }, location.origin);
+    } });
   reader = mountReader({ sourceAdapter: adapter, openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}` : ''}`,
     sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
     onRequest(handle, frame) {
@@ -129,6 +133,10 @@ document.getElementById('run-checks').onclick = async event => {
     if (!$('follow').checked) throw new Error('Follow words is not available');
     pass('Spoken words are marked over the image; Follow words remains available');
     const first = player.session.unit.id;
+    await render();
+    await new Promise(resolve => setTimeout(resolve, 600));
+    if (player.session.unavailable || player.session.unit.id !== first) throw new Error('A same-page image repaint stopped the reader');
+    pass('Replacing the image URL with the same page contents keeps the prepared reading');
     $('play').click(); await wait(() => player.engine.state === 'playing', 'Playback did not resume');
     await wait(() => player.session.unit.id !== first, 'Audio completion did not turn the page', 60_000);
     $('play').click();
@@ -139,6 +147,12 @@ document.getElementById('run-checks').onclick = async event => {
     await new Promise(resolve => setTimeout(resolve, 1500));
     if (player.session.unit.id !== paused) throw new Error('Pages changed while paused');
     pass('Audio completion presents the next page with cached speech at 3×; Pause prevents further turns');
+    const manualNext = document.getElementById('kr-chevron-right');
+    manualNext.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    manualNext.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    await new Promise(resolve => setTimeout(resolve, 800));
+    if (!player.session.unavailable || !/different page/.test($('error').textContent)) throw new Error('A real manual page change was not detected');
+    pass('A real manual page change stops the reader with its specific reason');
     await player.session.stop();
     if (player.session.future.size || document.getElementById('main-content').inert) throw new Error('Stop left work or controls locked');
     await reader.cleanup();

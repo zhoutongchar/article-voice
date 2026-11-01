@@ -34,7 +34,7 @@ export class ReadingSession {
     }
   }
   async play() {
-    if (this.unavailable) throw new Error('The page changed. Close the player and reopen it at your reading position.');
+    if (this.unavailable) throw this.unavailable;
     const version = this.version;
     await this.settling;
     if (version !== this.version || this.unavailable) return;
@@ -42,7 +42,7 @@ export class ReadingSession {
     this.prefetch(); await this.engine.play();
   }
   pause() { this.wantsPlay = false; this.engine.pause(); }
-  invalidate() { this.stop(); this.unavailable = true; }
+  invalidate(reason = new Error('The page changed. Close the player and reopen it at your reading position.')) { this.stop(); this.unavailable = reason; }
   stop() {
     const version = ++this.version; this.wantsPlay = false; this.abortFuture(); this.engine.stop();
     this.settling = this.unit?.source?.prefetch ? this.cancelSource(version) : Promise.resolve();
@@ -65,7 +65,7 @@ export class ReadingSession {
         record.engine.load(this.normalized(unit), this.settings); this.future.set(unit.id, record);
       }
     }).catch(error => {
-      if (version === this.version && error.name !== 'AbortError') { this.invalidate(); this.onError(error); }
+      if (version === this.version && error.name !== 'AbortError') { this.invalidate(error); this.onError(error); }
       throw error;
     });
     this.discovered = discovered;

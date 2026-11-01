@@ -41,6 +41,8 @@ An adapter is asked to present the next unit only after the current audio comple
 
 Kindle unit identity combines the book ID and captured image digest. The optional location label is display metadata: Kindle can hide or update it independently of the image, so it must not participate in position verification.
 
+The page observer also uses this content identity. A new blob URL or a temporarily removed image triggers a settled capture, not immediate invalidation. An identical image keeps the prepared reading and refreshes marks; different image contents stop reading. Observer verification is cancelled when owned page traversal begins. The specific failure reason survives transport and a later Play attempt.
+
 Kindle's chevron containers handle mouse press/release for navigation. The adapter sends one bubbling `mousedown`/`mouseup` gesture through those DOM handlers and verifies a completed image change. A synthetic `click()` alone only reaches metrics listeners in the inspected reader build and does not navigate. The gesture fixture preserves that distinction.
 
 A new image can appear before Kindle accepts another turn. The inspected reader throttles each direction for 100 ms and also has a renderer busy gate. Capture and navigation therefore share one readiness check: the loading indicator must clear, page-view animations must finish, and the image must stay stable for 125 ms. Restoration uses this same boundary for each backward turn. Restoration errors preserve their underlying reason instead of discarding it.
@@ -60,3 +62,7 @@ Run `npm run check`, the Python boundary suite, and `npm run mac:check`. Build t
 Run `npm run dev`, open `http://127.0.0.1:4317/tests/source.html`, and choose **Run adapter checks**. This uses the production Kindle adapter, actual Apple Vision OCR, and explicitly labelled recorded speech. It checks queued units, source restoration, word marks, 3×, page completion, pause, stop, and cleanup. Add `?local=1` to use real Qwen through the app-managed engine. This fixture is not the Amazon website and does not establish live Kindle compatibility.
 
 The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. It also revokes decoded image URLs, binds navigation to container mouse press/release, and refuses more navigation while a delayed loading indicator remains after the new image appears. This checks restoration against Kindle's readiness boundary as well as the gesture boundary.
+
+It also replaces the current image with identical pixels under a new URL, then changes to a genuinely different page. The former must preserve playback and prepared audio; the latter must stop with a specific reason.
+
+For a live installed-extension test, use native Chrome window controls rather than a browser-automation tab claim: the latter can replace protected extension frames with `srcdoc`. Keep the Mac unlocked, open the compact player, confirm upcoming pages become ready, let audio complete across multiple spreads, and verify source word marks, pause/resume and Stop. Record actual page labels and screenshots. A locked Mac prevents this live check; fixture results alone do not replace it.

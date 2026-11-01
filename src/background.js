@@ -52,7 +52,8 @@ export function registerBackground(chrome) {
       return true;
     }
     if (message?.type === 'source-changed' && sender.frameId === 0 && sender.tab?.id) {
-      chrome.runtime.sendMessage({ type: 'source-changed', tabId: sender.tab.id }).then(() => reply({ ok: true }), () => reply({ ok: false }));
+      chrome.runtime.sendMessage({ type: 'source-changed', tabId: sender.tab.id,
+        ...(typeof message.reason === 'string' ? { reason: message.reason.slice(0, 400) } : {}) }).then(() => reply({ ok: true }), () => reply({ ok: false }));
       return true;
     }
     if (message?.type === 'follow-state' && sender.frameId === 0 && sender.tab?.id

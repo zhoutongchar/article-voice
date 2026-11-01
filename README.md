@@ -49,7 +49,7 @@ Chrome permissions cover reading a page after you invoke the extension, local st
 
 ## Limitations
 
-This reads article text exposed in the page DOM. Chrome internal pages, the Web Store, Chrome's built-in PDF viewer, cross-origin embedded articles, and canvas-only text are unsupported. Paywalled content must already be visible to you. Complex or changing pages may need the reader reopened. This is a Chrome reader, not a system-wide reader for Kindle or other Mac apps.
+The article adapter reads text exposed in the page DOM. The Kindle Cloud Reader adapter also reads visible page images through local Apple Vision OCR, prepares two pages ahead, and turns pages after audio completes; see [source adapters](docs/source-adapters.md). Other canvas-only text, Chrome internal pages, the Web Store, Chrome's built-in PDF viewer, and cross-origin embedded articles are unsupported. Paywalled content must already be visible to you. Complex or changing pages may need the reader reopened. Native Kindle and other Mac apps remain unsupported.
 
 Speech begins passage by passage after generation and alignment, rather than playing the first raw audio packet. Faster playback may wait for generation to catch up. Reference conditioning improves speaker consistency but does not guarantee identical perceived timbre in every sentence. English and Chinese output have been exercised; other model languages remain unverified.
 
@@ -97,7 +97,9 @@ The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a git
 
 For the 0.5.1 preview, prior local verification passed JavaScript checks and browser harness checks for the three layouts, playback continuity, whole-article mode, and the ten-second scroll suspension. The minimal player measured **480 × 52 CSS pixels**. Real Qwen checks exercised speech, measured alignment, nine voices, word seeking, cached replay, and playback around 3× on the test Mac. The user also confirmed that the installed extension's sample reading works.
 
-The browser harness uses production reader modules with a development transport; it is not an automated installed-extension end-to-end check. Browser-control interference prevented reliable automation of the installed player. Model download resume and integrity are tested with a controlled HTTP server; a complete uncached 3.61 GB download has not been repeated. Signing/notarization and a clean-machine install remain unverified.
+For the 0.6.4 source, a live test of the installed extension on Kindle Cloud Reader passed two consecutive audio-driven page turns at 2.25×, local Qwen speech, word highlighting, two-page audio preparation/refill, pause/resume, and Stop clearing playback and marks while leaving Kindle navigation available. Native Chrome window controls preserve the installed player; claiming its tab through browser automation can interrupt the extension frame. The source fixture separately verifies that identical-image replacements preserve playback while genuine page changes stop it with a specific reason. The previous adapter fails that repaint regression.
+
+The browser harness uses production reader modules with a development transport; it does not itself establish installed-extension behavior. Model download resume and integrity are tested with a controlled HTTP server; a complete uncached 3.61 GB download has not been repeated. Signing/notarization and a clean-machine install remain unverified.
 
 ## Credits
 

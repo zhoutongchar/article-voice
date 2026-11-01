@@ -195,7 +195,8 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
     unsubscribe = await transport.subscribe(async position => {
       if (position.type === 'follow-state') { showFollowPause(position.pausedUntil); return; }
       if (position.type === 'source-changed') {
-        session.invalidate(); report(new Error('The page changed. Close the player and reopen it at your reading position.')); return;
+        const reason = new Error(position.reason || 'The page changed. Close the player and reopen it at your reading position.');
+        session.invalidate(reason); report(reason); return;
       }
       try {
         if (!canGenerate(readingSettings()) && !engine.segments.every(segment => segment.result)) {

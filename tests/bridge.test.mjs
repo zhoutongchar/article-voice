@@ -32,6 +32,10 @@ test('background routes page word clicks using the sender tab and identifies the
     { id: 'test', tab: { id: 7 }, frameId: 0 }, value => { reply = value; });
   await Promise.resolve();
   assert.deepEqual(forwarded, { type: 'follow-state', tabId: 7, pausedUntil: 1000 });
+  listener({ type: 'source-changed', reason: 'Kindle is displaying a different page.', tabId: 999 },
+    { id: 'test', tab: { id: 7 }, frameId: 0 }, value => { reply = value; });
+  await Promise.resolve();
+  assert.deepEqual(forwarded, { type: 'source-changed', tabId: 7, reason: 'Kindle is displaying a different page.' });
   forwarded = null;
   listener(input, { id: 'foreign', tab: { id: 7 }, frameId: 0 }, () => {});
   assert.equal(forwarded, null);

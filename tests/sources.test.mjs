@@ -158,5 +158,5 @@ test('a failed source preparation stops reading and requires reopening rather th
   } } });
   session.load(unit, settings); await session.play(); await until(() => errors.length);
   assert.match(errors[0].message, /Could not restore/); assert.equal(engine.wantsPlay, false);
-  await assert.rejects(session.play(), /Close the player and reopen/); await session.stop();
+  await assert.rejects(session.play(), /Could not restore the source/); await session.stop();
 });

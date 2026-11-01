@@ -4,13 +4,12 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
   if (!recognize) throw new Error('Update Article Voice on this Mac to enable Kindle reading.');
   const root = doc.querySelector('#main-content'), renderer = doc.querySelector('#kr-renderer');
   if (!root || !renderer) throw new Error('Open a book in Kindle, then start Article Voice.');
-  let cover, coverUrl, busy = false, originalInert, shownSrc, source, lastTurn = -Infinity;
+  let cover, coverUrl, busy = false, originalInert, shownSrc, source, verification, changed = false, disposed = false, lastTurn = -Infinity;
   const pageImage = () => [...renderer.querySelectorAll('.kg-full-page-img img,.kg-short-page-img img')]
     .find(image => image.getBoundingClientRect().width > 0);
-  const observer = new MutationObserver(() => {
-    if (!busy && shownSrc && pageImage()?.currentSrc !== shownSrc) { source?.invalidate(); onChange(); }
-  });
+  const observer = new MutationObserver(verifyCurrentPage);
   observer.observe(renderer, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  renderer.addEventListener('load', verifyCurrentPage, true);
   // The delivered reader throttles each navigation direction for 100 ms and
   // remains busy after replacing the image. Image presence alone is not a
   // completed turn, especially during the two consecutive backward restores.
@@ -59,6 +58,28 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
       title: doc.querySelector('.top-chrome__book-title')?.textContent || doc.title,
       url: url.href, language: doc.documentElement.lang?.split('-')[0] || 'en', label };
   }
+  function verifyCurrentPage() {
+    const unit = source?.current(), image = pageImage();
+    if (disposed || changed || busy || !unit || !shownSrc || verification
+      || (image?.currentSrc === shownSrc && image.src === shownSrc)) return;
+    const controller = verification = new AbortController();
+    (async () => {
+      try {
+        // A blob URL is only a repaint hint. Use the same content identity as
+        // navigation; a new URL or a temporary missing image is not a new page.
+        const image = await readyImage({ signal: controller.signal });
+        const observed = await captureImage(image, controller.signal);
+        if (busy || disposed || controller.signal.aborted || source.current() !== unit) return;
+        if (observed.id !== unit.id) throw new Error('Kindle is displaying a different page. Reopen Article Voice at the page you want to read.');
+        shownSrc = image.currentSrc; onChange({ type: 'repaint' });
+      } catch (error) {
+        if (error.name === 'AbortError' || disposed || busy || changed) return;
+        changed = true; source.invalidate(); onChange({ type: 'changed', reason: error.message });
+      } finally {
+        if (verification === controller) { verification = null; verifyCurrentPage(); }
+      }
+    })();
+  }
   const access = {
     async capture(signal) {
       return captureImage(await readyImage({ signal }), signal);
@@ -83,6 +104,7 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
     },
     cover(unit) {
       if (cover) return;
+      verification?.abort(); verification = null;
       busy = true; originalInert = root.inert; root.inert = true;
       const bytes = Uint8Array.from(atob(unit.image), value => value.charCodeAt(0));
       coverUrl = URL.createObjectURL(new Blob([bytes], { type: unit.imageMime }));
@@ -100,7 +122,10 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
       root.inert = originalInert ?? false; busy = false;
     },
     rectangle() { return (cover || pageImage())?.getBoundingClientRect(); },
-    dispose() { observer.disconnect(); access.uncover(); }
+    dispose() {
+      disposed = true; verification?.abort(); observer.disconnect();
+      renderer.removeEventListener('load', verifyCurrentPage, true); access.uncover();
+    }
   };
   source = createPagedImageSource({ id: 'kindle', access, recognize });
   source.capabilities.preparationNotice = 'Prepares two pages ahead and returns to your page. Kindle may count prepared pages as visited.';
