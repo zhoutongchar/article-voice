@@ -51,8 +51,8 @@ export function registerBackground(chrome) {
         error => reply({ ok: false, error: error.message })).finally(() => recognitions.delete(key));
       return true;
     }
-    if (message?.type === 'source-changed' && sender.frameId === 0 && sender.tab?.id) {
-      chrome.runtime.sendMessage({ type: 'source-changed', tabId: sender.tab.id,
+    if (['source-changed', 'source-page'].includes(message?.type) && sender.frameId === 0 && sender.tab?.id) {
+      chrome.runtime.sendMessage({ type: message.type, tabId: sender.tab.id,
         ...(typeof message.reason === 'string' ? { reason: message.reason.slice(0, 400) } : {}) }).then(() => reply({ ok: true }), () => reply({ ok: false }));
       return true;
     }

@@ -70,7 +70,9 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
         const image = await readyImage({ signal: controller.signal });
         const observed = await captureImage(image, controller.signal);
         if (busy || disposed || controller.signal.aborted || source.current() !== unit) return;
-        if (observed.id !== unit.id) throw new Error('Kindle is displaying a different page. Reopen Article Voice at the page you want to read.');
+        if (observed.id !== unit.id) {
+          changed = true; source.invalidate(); onChange({ type: 'page' }); return;
+        }
         shownSrc = image.currentSrc; onChange({ type: 'repaint' });
       } catch (error) {
         if (error.name === 'AbortError' || disposed || busy || changed) return;

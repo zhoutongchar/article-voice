@@ -55,6 +55,16 @@ test('source host prepares two units, restores the visible page and retains boun
   await host.dispose(); assert.equal(fixture.disposed, true);
 });
 
+test('opening follows a page that changes during OCR instead of publishing stale word coordinates', async () => {
+  const fixture = pages(async image => {
+    if (image === '0') await fixture.access.turn(1);
+    return { lines: [line(`page ${image}`)] };
+  });
+  const unit = await fixture.adapter.open();
+  assert.equal(unit.id, 'page-1'); assert.equal(unit.blocks[0].text, 'page 1');
+  assert.equal(fixture.index, 1); await fixture.adapter.dispose();
+});
+
 test('cancel during future-page OCR restores the source before cleanup finishes and permits retry', async () => {
   let started, blocked = true;
   const fixture = pages((image, signal) => image === '0' || !blocked ? Promise.resolve({ lines: [line('current')] })
@@ -159,4 +169,45 @@ test('a failed source preparation stops reading and requires reopening rather th
   session.load(unit, settings); await session.play(); await until(() => errors.length);
   assert.match(errors[0].message, /Could not restore/); assert.equal(engine.wantsPlay, false);
   await assert.rejects(session.play(), /Could not restore the source/); await session.stop();
+});
+
+test('reopening an externally changed page preserves play/pause, voice settings and current page audio', async () => {
+  const unit = id => ({ id, blocks: [id], passages: [{ text: id, block: 0, offset: 0 }], source: { prefetch: true, pagination: true } });
+  let actual = unit('first'), next = unit('second');
+  const spoken = [], engine = new ReaderEngine({ audio: new AudioFixture(),
+    cache: { get: async () => null, set: async () => {} },
+    generate: async text => { spoken.push(text); return { pcm: new Uint8Array(480), duration: .01, words: [] }; } });
+  const session = new ReadingSession({ engine, transport: { request: async message => {
+    if (message.type === 'source-next') return [];
+    if (message.type === 'source-refresh') actual = next;
+    return actual;
+  } } });
+  session.load(actual, settings); await session.play(); await session.reopen();
+  assert.equal(session.unit.id, 'second'); assert.equal(engine.wantsPlay, true); assert.equal(engine.speed, 3);
+  assert.equal(engine.settings.voiceId, 'test'); assert.equal(spoken.at(-1), 'second');
+  session.pause(); next = unit('third'); await session.reopen();
+  assert.equal(session.unit.id, 'third'); assert.equal(engine.wantsPlay, false); assert.equal(session.needsRefresh, false);
+  assert.equal(session.future.size, 0); await session.stop();
+});
+
+for (const action of ['stop', 'pause']) test(`${action} during page reopening prevents late playback and the next Play retries the current visible page`, async () => {
+  const unit = id => ({ id, blocks: [id], passages: [{ text: id, block: 0, offset: 0 }], source: { prefetch: true, pagination: true } });
+  let actual = unit('first'), release, refreshes = 0;
+  const engine = new ReaderEngine({ audio: new AudioFixture(), cache: { get: async () => null, set: async () => {} },
+    generate: async () => ({ pcm: new Uint8Array(480), duration: .01, words: [] }) });
+  const session = new ReadingSession({ engine, transport: { request: async message => {
+    if (message.type === 'source-next') return [];
+    if (message.type === 'source-refresh') {
+      if (++refreshes === 1) await new Promise(resolve => { release = resolve; });
+      actual = unit('second');
+    }
+    return actual;
+  } } });
+  session.load(actual, settings); await session.play();
+  const reopening = session.reopen(); await until(() => release);
+  await session[action](); release(); await reopening;
+  assert.equal(engine.wantsPlay, false); assert.equal(session.needsRefresh, true);
+  await session.play();
+  assert.equal(refreshes, 2); assert.equal(session.unit.id, 'second'); assert.equal(engine.wantsPlay, true);
+  await session.stop();
 });

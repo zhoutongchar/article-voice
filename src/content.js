@@ -3,10 +3,10 @@ import { createSource } from './sources/registry.js';
 import { SourceHost } from './sources/host.js';
 import { recognizeImage } from './sources/recognize.js';
 
-export function mountReader({ openFrame, onRequest, sourceAdapter, recognize = recognizeImage, sendEvent = message => chrome.runtime.sendMessage(message) } = {}) {
+export function mountReader({ openFrame, onRequest, createAdapter = createSource, recognize = recognizeImage, sendEvent = message => chrome.runtime.sendMessage(message) } = {}) {
   const existing = document.getElementById('article-voice-host');
   if (existing) { existing.style.display = ''; return; }
-  let article, source;
+  let article, source, renewal = Promise.resolve(), sourceVersion = 0, closed = false;
   const host = document.createElement('div');
   host.id = 'article-voice-host';
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;right:20px;bottom:20px;width:408px;max-width:calc(100vw - 24px);height:332px;max-height:calc(100vh - 32px);border-radius:22px;box-shadow:0 20px 80px #0005;overflow:hidden;color-scheme:light;';
@@ -137,18 +137,34 @@ export function mountReader({ openFrame, onRequest, sourceAdapter, recognize = r
     return { word: word.text, scroll: window.scrollY,
       rect: { top: rect.top, bottom: rect.bottom }, highlighted: highlights?.has('article-voice-word') || !!wordMarks.childElementCount };
   }
-  const handle = message => {
-    if (message.type === 'article') {
-      source ||= new SourceHost(sourceAdapter || createSource({ document, url: new URL(location.href), recognize,
+  const newSource = () => new SourceHost(createAdapter({ document, url: new URL(location.href), recognize,
         onChange: event => {
           clear();
-          if (event?.type !== 'repaint') Promise.resolve(sendEvent({ type: 'source-changed', reason: event?.reason })).catch(() => {});
+          if (event?.type !== 'repaint') Promise.resolve(sendEvent({
+            type: event?.type === 'page' ? 'source-page' : 'source-changed', reason: event?.reason
+          })).catch(() => {});
         } }));
+  const handle = message => {
+    if (message.type === 'source-refresh') {
+      clear(); const version = ++sourceVersion;
+      renewal = renewal.catch(() => {}).then(async () => {
+        await source?.dispose();
+        if (closed || version !== sourceVersion) throw new DOMException('Cancelled', 'AbortError');
+        source = newSource();
+        return article = await source.open();
+      });
+      return renewal;
+    }
+    if (message.type === 'article') {
+      source ||= newSource();
       return source.open().then(value => article = value);
     }
     if (message.type === 'source-next') return source.prepareNext(message.after);
     if (message.type === 'source-present') { clear(); return source.present(message.id).then(value => article = value); }
-    if (message.type === 'source-cancel') return source?.cancel();
+    if (message.type === 'source-cancel') {
+      sourceVersion++;
+      return Promise.all([source?.cancel(), renewal.catch(() => {})]).then(([actual]) => actual);
+    }
     if (message.type === 'highlight') return highlight(message.value);
     if (message.type === 'follow') {
       follow.setEnabled(message.value); clearTimeout(followTimer); notifyFollow(0);
@@ -205,6 +221,7 @@ export function mountReader({ openFrame, onRequest, sourceAdapter, recognize = r
   document.addEventListener('scroll', dragScroll, { capture: true, passive: true });
   let bridgeCleanup;
   function cleanup() {
+    closed = true; sourceVersion++;
     interruptionObserver.disconnect();
     clear(); host.remove(); style.remove(); marks.remove();
     document.removeEventListener('pointerdown', pointerDown);
@@ -219,7 +236,7 @@ export function mountReader({ openFrame, onRequest, sourceAdapter, recognize = r
     document.removeEventListener('scroll', dragScroll, true);
     bridgeCleanup?.();
     if (!onRequest) chrome.runtime.onMessage.removeListener(listener);
-    return source?.dispose();
+    return Promise.all([source?.dispose(), renewal.catch(() => {})]).then(() => {});
   }
   if (onRequest) bridgeCleanup = onRequest(handle, frame);
   else chrome.runtime.onMessage.addListener(listener);

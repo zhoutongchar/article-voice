@@ -36,6 +36,9 @@ test('background routes page word clicks using the sender tab and identifies the
     { id: 'test', tab: { id: 7 }, frameId: 0 }, value => { reply = value; });
   await Promise.resolve();
   assert.deepEqual(forwarded, { type: 'source-changed', tabId: 7, reason: 'Kindle is displaying a different page.' });
+  listener({ type: 'source-page', tabId: 999 }, { id: 'test', tab: { id: 7 }, frameId: 0 }, () => {});
+  await Promise.resolve();
+  assert.deepEqual(forwarded, { type: 'source-page', tabId: 7 });
   forwarded = null;
   listener(input, { id: 'foreign', tab: { id: 7 }, frameId: 0 }, () => {});
   assert.equal(forwarded, null);
@@ -81,7 +84,9 @@ test('player receives word clicks only from its own tab and removes its listener
   listener({ type: 'seek-word', tabId: 7, block: 0, start: 0, end: 5 }, { id: 'test' });
   listener({ type: 'follow-state', tabId: 8, pausedUntil: 1000 }, { id: 'test' });
   listener({ type: 'follow-state', tabId: 7, pausedUntil: 1000 }, { id: 'test' });
-  assert.equal(events.length, 2); assert.equal(events[1].pausedUntil, 1000);
+  listener({ type: 'source-page', tabId: 8 }, { id: 'test' });
+  listener({ type: 'source-page', tabId: 7 }, { id: 'test' });
+  assert.equal(events.length, 3); assert.equal(events[1].pausedUntil, 1000); assert.equal(events[2].type, 'source-page');
   unsubscribe(); assert.equal(removed, true);
 });
 

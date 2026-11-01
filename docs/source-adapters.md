@@ -32,7 +32,7 @@ A unit has an opaque stable ID, title, URL, language, optional position label, a
 
 `ReadingSession` prepares two future units with the same voice settings as the current unit. `WorkQueue` serializes actual voice requests and gives current playback priority over pending background work. Cached audio and already prepared engine results move into the current engine without generation being repeated. Speed remains a playback setting.
 
-An adapter is asked to present the next unit only after the current audio completes. Pause stops automatic progression; Stop invalidates pending work and waits for source restoration. Voice/language changes discard prepared readings. External source changes invalidate playback, requiring a new reading. Queue audio has a 128 MB budget; the source retains one previous image unit and two future units.
+An adapter is asked to present the next unit only after the current audio completes. Pause stops automatic progression; Stop invalidates pending work and waits for source restoration. Voice/language changes discard prepared readings. A recognized external page/layout change replaces the source, discards its old queued units, and opens the visible page automatically. Playing resumes from the start of that visible page; a paused or stopped reader stays paused. Stop or Close during reconnection prevents late playback. Actual capture/navigation failures remain errors. Queue audio has a 128 MB budget; the source retains one previous image unit and two future units.
 
 ## Implementations
 
@@ -41,13 +41,15 @@ An adapter is asked to present the next unit only after the current audio comple
 
 Kindle unit identity combines the book ID and captured image digest. The optional location label is display metadata: Kindle can hide or update it independently of the image, so it must not participate in position verification.
 
-The page observer also uses this content identity. A new blob URL or a temporarily removed image triggers a settled capture, not immediate invalidation. An identical image keeps the prepared reading and refreshes marks; different image contents stop reading. Observer verification is cancelled when owned page traversal begins. The specific failure reason survives transport and a later Play attempt.
+The page observer also uses this content identity. A new blob URL or a temporarily removed image triggers a settled capture, not immediate invalidation. An identical image keeps the prepared reading and refreshes marks. Different image contents emit a page-change event: the invalid old source is disposed without restoring its former position, and the content host creates a fresh adapter at the visible page. Source replacement remains in the page; the shared session preserves playback intent. Observer verification is cancelled when owned page traversal begins. Actual failure reasons survive transport and a later Play attempt.
+
+Opening verifies the captured image again after OCR. If the user turns another page during recognition, it recognizes the newer image before publishing any text or coordinates. A reading never starts with word boxes from the previous page.
 
 Kindle's chevron containers handle mouse press/release for navigation. The adapter sends one bubbling `mousedown`/`mouseup` gesture through those DOM handlers and verifies a completed image change. A synthetic `click()` alone only reaches metrics listeners in the inspected reader build and does not navigate. The gesture fixture preserves that distinction.
 
 A new image can appear before Kindle accepts another turn. The inspected reader throttles each direction for 100 ms and also has a renderer busy gate. Capture and navigation therefore share one readiness check: the loading indicator must clear, page-view animations must finish, and the image must stay stable for 125 ms. Restoration uses this same boundary for each backward turn. Restoration errors preserve their underlying reason instead of discarding it.
 
-The Kindle prefetch mechanism temporarily visits upcoming pages, so Amazon may record those pages as visited. Restoration returns the visible page; it does not promise to undo Kindle’s reading-history synchronization. Resizing or changing Kindle layout invalidates page geometry and requires reopening the reader.
+The Kindle prefetch mechanism temporarily visits upcoming pages, so Amazon may record those pages as visited. Restoration returns the visible page; it does not promise to undo Kindle’s reading-history synchronization. Resizing or changing Kindle layout rebuilds the reading for the newly visible page. It currently restarts that page rather than locating the old spoken word across reflowed page boundaries.
 
 ## Adding another source
 
@@ -63,6 +65,6 @@ Run `npm run dev`, open `http://127.0.0.1:4317/tests/source.html`, and choose **
 
 The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. It also revokes decoded image URLs, binds navigation to container mouse press/release, and refuses more navigation while a delayed loading indicator remains after the new image appears. This checks restoration against Kindle's readiness boundary as well as the gesture boundary.
 
-It also replaces the current image with identical pixels under a new URL, then changes to a genuinely different page. The former must preserve playback and prepared audio; the latter must stop with a specific reason.
+It also replaces the current image with identical pixels under a new URL, changes to a genuinely different page while paused and while playing, and changes the rendered image dimensions. Repaints preserve prepared audio; page/layout changes must reconnect without a fatal error and preserve playback intent.
 
 For a live installed-extension test, use native Chrome window controls rather than a browser-automation tab claim: the latter can replace protected extension frames with `srcdoc`. Keep the Mac unlocked, open the compact player, confirm upcoming pages become ready, let audio complete across multiple spreads, and verify source word marks, pause/resume and Stop. Record actual page labels and screenshots. A locked Mac prevents this live check; fixture results alone do not replace it.

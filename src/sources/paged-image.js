@@ -53,8 +53,14 @@ export function createPagedImageSource({ id, access, recognize }) {
     current: () => units[current],
     invalidate() { invalid = true; generation++; active?.abort(); },
     open: () => work(async signal => {
-      const image = await access.capture(signal), unit = await snapshot(image, signal);
-      units.splice(0, units.length, unit); actual = current = 0; return unit;
+      let image = await access.capture(signal);
+      while (true) {
+        const unit = await snapshot(image, signal), visible = await access.capture(signal);
+        if (visible.id === image.id) {
+          units.splice(0, units.length, unit); actual = current = 0; return unit;
+        }
+        image = visible;
+      }
     }),
     prepareNext: (after, count = 2) => work(async signal => {
       const start = units.findIndex(unit => unit.id === after);

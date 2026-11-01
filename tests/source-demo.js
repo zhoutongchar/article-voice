@@ -8,13 +8,14 @@ const pages = [
   ['The kettle begins to sing in the kitchen.', 'We put our books on the table and listen to the rain.'],
   ['Evening arrives with warm windows and quiet streets.', 'There is another story waiting, whenever we are ready.']
 ];
-let index = 0, reader, adapter;
+let index = 0, reader, adapter, layoutScale = 1;
 const output = document.getElementById('result');
-let labelTimer, navigationBusy = false, refusedTurns = 0;
-async function render() {
+let labelTimer, navigationBusy = false, refusedTurns = 0, heldRecognition;
+async function render(scale = layoutScale) {
+  layoutScale = scale;
   clearTimeout(labelTimer);
-  const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1000;
-  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#faf9f5'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const canvas = document.createElement('canvas'); canvas.width = 1600 * scale; canvas.height = 1000 * scale;
+  const ctx = canvas.getContext('2d'); ctx.scale(scale, scale); ctx.fillStyle = '#faf9f5'; ctx.fillRect(0, 0, 1600, 1000);
   ctx.fillStyle = '#172f24'; ctx.font = '48px Georgia';
   let y = 180;
   for (const paragraph of pages[index]) {
@@ -68,6 +69,15 @@ const bindPageTurn = (id, direction) => {
 bindPageTurn('kr-chevron-left', -1); bindPageTurn('kr-chevron-right', 1);
 await render();
 const recognize = async (image, signal) => {
+  if (heldRecognition) {
+    const gate = heldRecognition; heldRecognition = null;
+    await new Promise((resolve, reject) => {
+      const abort = () => { signal.removeEventListener('abort', abort); reject(new DOMException('Cancelled', 'AbortError')); };
+      gate.release = () => { signal.removeEventListener('abort', abort); resolve(); };
+      signal.addEventListener('abort', abort, { once: true }); gate.started = true;
+      if (signal.aborted) abort();
+    });
+  }
   const response = await fetch('/test/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image, language: 'en' }), signal });
   const value = await response.json(); if (value.error) throw new Error(value.error); return value;
 };
@@ -75,12 +85,9 @@ async function openReader() {
   if (reader?.host.isConnected) return;
   const local = new URL(location.href).searchParams.has('local');
   if (local) document.getElementById('mode').textContent = 'Actual Apple Vision OCR and real local Qwen through the app-managed speech engine.';
-  adapter = createKindleSource({ document, url: new URL('https://read.amazon.com/?asin=public-test-book'), recognize,
-    onChange: event => {
-      if (event?.type !== 'repaint') reader?.frame.contentWindow?.postMessage({ channel: 'article-voice-event',
-        message: { type: 'source-changed', reason: event?.reason } }, location.origin);
-    } });
-  reader = mountReader({ sourceAdapter: adapter, openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}` : ''}`,
+  reader = mountReader({ createAdapter: context => adapter = createKindleSource({ ...context,
+    url: new URL('https://read.amazon.com/?asin=public-test-book'), recognize }),
+    openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}` : ''}`,
     sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
     onRequest(handle, frame) {
       const listener = async event => {
@@ -147,12 +154,39 @@ document.getElementById('run-checks').onclick = async event => {
     await new Promise(resolve => setTimeout(resolve, 1500));
     if (player.session.unit.id !== paused) throw new Error('Pages changed while paused');
     pass('Audio completion presents the next page with cached speech at 3×; Pause prevents further turns');
-    const manualNext = document.getElementById('kr-chevron-right');
-    manualNext.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
-    manualNext.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
-    await new Promise(resolve => setTimeout(resolve, 800));
-    if (!player.session.unavailable || !/different page/.test($('error').textContent)) throw new Error('A real manual page change was not detected');
-    pass('A real manual page change stops the reader with its specific reason');
+    const manualTurn = direction => {
+      const button = document.getElementById(direction > 0 ? 'kr-chevron-right' : 'kr-chevron-left');
+      button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+      button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    };
+    manualTurn(1);
+    await wait(() => player.session.unit.id !== paused && !player.session.needsRefresh, 'Manual page change did not reconnect');
+    if (player.engine.wantsPlay || index !== 2 || !$('error').hidden) throw new Error('Manual navigation lost paused state');
+    pass('A manual page turn reconnects to the visible page and keeps playback paused');
+    const beforeLayout = player.session.unit.id;
+    await render(.9);
+    await wait(() => player.session.unit.id !== beforeLayout && !player.session.needsRefresh, 'Layout change did not reconnect');
+    if (index !== 2 || player.engine.wantsPlay || !$('error').hidden) throw new Error('Layout change lost page or pause state');
+    pass('A page-image layout change reconnects without a fatal error and preserves pause');
+    const manual = player.session.unit.id;
+    $('play').click(); await wait(() => player.engine.state === 'playing', 'Playback did not start before manual navigation');
+    await wait(() => !player.session.pending, 'Preparation did not settle before manual navigation');
+    manualTurn(-1);
+    await wait(() => player.session.unit.id !== manual && player.engine.state === 'playing', 'Playing reader did not follow manual navigation');
+    if (index !== 1 || !$('error').hidden) throw new Error('Manual navigation did not adopt the actual page');
+    pass('Manual navigation while playing reads the newly visible page and rebuilds the queue');
+    await wait(() => !player.session.pending, 'Preparation did not settle before cancellation check');
+    const gate = heldRecognition = {};
+    manualTurn(1);
+    await wait(() => gate.started, 'Reconnection did not begin recognition');
+    await player.session.stop(); gate.release();
+    await new Promise(resolve => setTimeout(resolve, 600));
+    if (player.engine.wantsPlay || player.session.future.size || !$('error').hidden) throw new Error('Stop during reconnection left playback or an error');
+    pass('Stop during reconnection cancels recognition and prevents late playback');
+    $('play').click();
+    await wait(() => !player.session.needsRefresh && player.engine.state === 'playing', 'Play did not retry the visible page after Stop');
+    if (index !== 2 || !$('error').hidden) throw new Error('Reconnection retry read a stale page');
+    pass('Play after cancellation reconnects to the actual visible page');
     await player.session.stop();
     if (player.session.future.size || document.getElementById('main-content').inert) throw new Error('Stop left work or controls locked');
     await reader.cleanup();

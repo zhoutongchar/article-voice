@@ -18,7 +18,7 @@ export class ReadingSession {
   }
   emit() { this.onChange({ queued: [...this.future.values()].filter(record => record.ready).length, preparing: !!this.pending, unit: this.unit }); }
   load(unit, settings) {
-    this.unavailable = false;
+    this.unavailable = false; this.needsRefresh = false;
     this.version++; this.settings = { ...settings }; this.wantsPlay = false;
     this.abortFuture(); this.endAfter = null;
     this.unit = unit; this.engine.load(this.normalized(unit), this.settings);
@@ -34,6 +34,7 @@ export class ReadingSession {
     }
   }
   async play() {
+    if (this.needsRefresh) return this.reopen(true);
     if (this.unavailable) throw this.unavailable;
     const version = this.version;
     await this.settling;
@@ -41,7 +42,21 @@ export class ReadingSession {
     this.wantsPlay = true;
     this.prefetch(); await this.engine.play();
   }
-  pause() { this.wantsPlay = false; this.engine.pause(); }
+  pause() { this.wantsPlay = false; if (this.needsRefresh) this.version++; this.engine.pause(); }
+  async reopen(autoplay = this.wantsPlay) {
+    const settling = this.stop(), version = this.version;
+    this.needsRefresh = true;
+    try {
+      await settling;
+      if (version !== this.version) return;
+      const unit = await this.transport.request({ type: 'source-refresh' });
+      if (version !== this.version) return;
+      this.load(unit, this.settings);
+      if (autoplay) await this.play();
+    } catch (error) {
+      if (version === this.version && error.name !== 'AbortError') throw error;
+    }
+  }
   invalidate(reason = new Error('The page changed. Close the player and reopen it at your reading position.')) { this.stop(); this.unavailable = reason; }
   stop() {
     const version = ++this.version; this.wantsPlay = false; this.abortFuture(); this.engine.stop();
