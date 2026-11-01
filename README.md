@@ -106,6 +106,12 @@ token throughput or guarantee gapless 3× playback.
 
 ## Verification
 
+Unreleased source fixes address OCR column/paragraph boundaries, soft-wrap pauses
+and navigation blocking ready audio. They were reproduced from a supplied
+screenshot with real local models and tested without changing the installed
+extension. See [the reading-continuity investigation](docs/reading-continuity.md)
+for the local replay, audio measurements and remaining streaming limits.
+
 The 0.8.1 release passed **76 JavaScript tests, 49 Python tests and 48 native
 checks**, plus bundle signature and archive integrity checks. After installation,
 the native host started the packaged engine normally, with no enabling flag;

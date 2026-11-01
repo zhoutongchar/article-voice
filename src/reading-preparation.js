@@ -1,6 +1,7 @@
 import { localFormatContent } from './local.js';
 import { alignWords } from './alignment.js';
 import { contentChunksFromUnit, validateContentTransform, planSpeech, sourceRanges } from './pipeline/contracts.js';
+import { unwrapContent } from './pipeline/soft-wraps.js';
 
 // All sources share ContentChunk -> optional transform -> SpeechChunk. HTML
 // placeholders are prepared lazily; OCR first seals its assembled page window.
@@ -22,8 +23,9 @@ export async function prepareReadingUnit(unit, settings, signal, format = localF
   }, []);
   const preparePassage = async (segment, currentSettings, currentSignal) => {
     const input = segment.contentInput;
-    const content = currentSettings.improveText === false ? input : await format(input, { signal: currentSignal, priority: currentSettings.priority || 0, onStage: currentSettings.onStage, scheduler: currentSettings.scheduler });
+    let content = currentSettings.improveText === false ? input : await format(input, { signal: currentSignal, priority: currentSettings.priority || 0, onStage: currentSettings.onStage, scheduler: currentSettings.scheduler });
     await validateContentTransform(input, content);
+    if (unit.source?.format === 'ocr') content = await unwrapContent(content);
     if (currentSignal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     return (await planSpeech(content)).map(speech => {
       const ranges = fragmentRanges(sourceRanges(content, speech.range.start, speech.range.end));

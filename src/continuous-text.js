@@ -1,5 +1,6 @@
+import { hasTerminalPunctuation } from './text-segmentation.js';
 const pageText = unit => unit.blocks.join('\n\n');
-export const needsContinuation = unit => !!unit.blocks.at(-1)?.trim() && !/[.!?。！？](?:[”’"')\]]*)\s*$/.test(unit.blocks.at(-1));
+export const needsContinuation = unit => !!unit.blocks.at(-1)?.trim() && !hasTerminalPunctuation(unit.blocks.at(-1));
 
 // Include a continuation before committing the pending tail to speech. Text
 // already assigned to an earlier plan is consumed once, never rewritten later.
@@ -24,7 +25,7 @@ export function continuousUnit(unit, following, consumed) {
   append(unit, consumed.get(unit.id) || 0, text.length);
   let tail = blocks.at(-1) || '';
   for (const next of following) {
-    if (!tail || /[.!?。！？](?:[”’"')\]]*)\s*$/.test(tail)) break;
+    if (!tail || hasTerminalPunctuation(tail)) break;
     // The first block is the continuing paragraph, not merely its first
     // sentence. Keep the page boundary as a visual line wrap for preparation.
     const end = next.blocks[0]?.length || 0;

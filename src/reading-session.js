@@ -11,6 +11,7 @@ export class ReadingSession {
     this.consumed = new Map();
     this.discoveries = new Map();
     const highlight = engine.onHighlight;
+    this.deliverHighlight = highlight;
     engine.onHighlight = value => this.highlight(value, highlight);
     const generate = engine.generate, prepare = engine.prepare, queue = this.scheduler = new StageScheduler({ content: 2, speech: 2 });
     this.generate = (text, settings, signal, priority) => queue.run('speech', settings.speechChunk?.id || text, () => generate(text, { ...settings, priority }, signal), { signal, priority, resource: 'speech' });
@@ -34,6 +35,10 @@ export class ReadingSession {
           // Rebuild from the original page, extending only the uncommitted tail.
           unit = continuousUnit(ordered[index], ordered.slice(index + 1), this.consumed);
         }
+        // Another preparation may have committed this entire page as a
+        // continuation while this job awaited discovery. It owns no remaining
+        // speech, rather than an invalid empty ContentChunk.
+        if (!unit.blocks.length) return { ...unit, prepared: true, passages: [] };
       }
       return queue.run('content', unit.id || '', () => prepare(unit, { ...settings, priority }, signal), { signal, priority, resource: 'content' });
     };
@@ -194,15 +199,14 @@ export class ReadingSession {
     record.promoted = true; record.engine.settings.priority = 0;
     await record.engine.ensure(0);
     if (version !== this.version || !this.wantsPlay) return false;
-    const unit = this.displayed === record.unit.id ? record.unit
-      : await this.transport.request({ type: 'source-present', id: record.unit.id });
-    if (version !== this.version) return false;
     const autoplay = this.wantsPlay;
     this.settings.speed = this.engine.speed;
-    this.unit = unit; this.future.delete(unit.id);
-    this.displayed = unit.id;
+    this.unit = record.unit; this.future.delete(record.unit.id);
     this.engine.load(record.engine.article, this.settings, record.engine.segments);
     record.engine.stop();
+    // Presentation and ready audio are independent. Turning the page must not
+    // hold the next paragraph or pause an already playing continuation.
+    this.presentPage(record.unit.id);
     this.emit();
     if (autoplay) { this.wantsPlay = true; await this.engine.play(); }
     else this.engine.pause();
@@ -224,16 +228,18 @@ export class ReadingSession {
       start: value.start == null ? null : value.start + location.offset,
       end: value.end == null ? null : value.end + location.offset };
     if (location.unit === this.displayed) { deliver(mapped); return; }
-    if (this.presenting) return;
+    this.presentPage(location.unit);
+  }
+  presentPage(id) {
+    if (id === this.displayed || this.presenting) return;
     const version = this.version;
-    this.engine.audio.pause(); deliver(null);
-    const pending = this.transport.request({ type: 'source-present', id: location.unit }).then(async () => {
+    this.deliverHighlight(null);
+    const pending = this.transport.request({ type: 'source-present', id }).then(() => {
       if (version !== this.version) return;
-      this.displayed = location.unit; this.presenting = null;
+      this.displayed = id; this.presenting = null;
       // A seek or pause can happen while the page is moving. Re-read the
       // current measured word rather than publishing the old request's mark.
       this.engine.lastHighlight = null; this.engine.tick();
-      if (!this.presenting && this.engine.wantsPlay) await this.engine.audio.play();
     }).catch(error => { if (version === this.version) { this.invalidate(error); this.onError(error); } })
       .finally(() => { if (this.presenting === pending) this.presenting = null; });
     this.presenting = pending;

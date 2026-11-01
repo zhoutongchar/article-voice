@@ -139,6 +139,14 @@ CPU validation, cache access, OCR, source capture/navigation and audio playback
 can overlap model work. Physical page navigation keeps its existing serialized
 ownership and restore/cancellation rules.
 
+Unreleased continuity fixes keep ready audio playing during page presentation.
+The OCR parser owns paragraph indents and column continuations using image
+dimensions. After optional formatting, a mapped content transform removes soft
+line wraps inside those paragraph ranges, including on the formatter bypass or
+rejection paths. Fully consumed lookahead pages create no empty model artifact.
+See the [local reading-continuity reproduction](reading-continuity.md) for the
+before/after audio evidence and the distinction from browser playback.
+
 The default audio target is 30 seconds of playback at the selected speed: at 3x,
 that requires 90 seconds of source audio. Only contiguous ready audio counts as
 playable. Generated audio beyond a gap counts toward the work budget, preventing

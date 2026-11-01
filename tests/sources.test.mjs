@@ -13,7 +13,8 @@ globalThis.cancelAnimationFrame = () => {};
 const until = async fn => { for (let i = 0; i < 500; i++) { if (fn()) return; await new Promise(resolve => setTimeout(resolve, 1)); } throw new Error('Timed out'); };
 const box = (x, y, width = .2) => ({ x, y, width, height: .04 });
 const line = (text, x = .05, y = .05) => ({ text, box: box(x, y), words: [{ start: 0, end: text.length, box: box(x, y) }] });
-function pages(recognize = async image => ({ lines: [line(`page ${image}`)] })) {
+const recognized = lines => ({ width: 1000, height: 1000, lines });
+function pages(recognize = async image => recognized([line(`page ${image}`)])) {
   let index = 0, covered = false, disposed = false;
   const visits = [];
   const capture = async () => ({ id: `page-${index}`, image: String(index), title: 'Book', url: 'https://example.org/book', label: `Page ${index + 1}` });
@@ -32,17 +33,18 @@ test('registry selects a site adapter before the article fallback and accepts ne
 });
 
 test('OCR boundary keeps UTF-16 offsets, column order and image-relative word hit testing', () => {
-  const wrapped = ocrBlocks({ lines: [line('re-', .05, .05), line('markable', .05, .10)] });
+  const wrapped = ocrBlocks(recognized([line('re-', .05, .05), line('markable', .05, .10)]));
   assert.equal(wrapped.length, 1); assert.equal(wrapped[0].text, 're-\nmarkable');
   assert.equal(wrapped[0].words[1].start, 4);
-  const blocks = ocrBlocks({ lines: [line('right one', .55, .05), line('left two', .05, .15), line('left one', .05, .05), line('right two', .55, .15)] });
-  assert.deepEqual(blocks.map(block => block.text), ['left one', 'left two', 'right one', 'right two']);
+  const blocks = ocrBlocks(recognized([line('right one', .55, .05), line('left two.', .05, .15), line('left one', .05, .05), line('right two', .55, .15)]));
+  assert.deepEqual(blocks.map(block => block.text), ['left one', 'left two.', 'right one', 'right two']);
   const unit = { blocks }, rect = { left: 10, top: 20, width: 1000, height: 800 };
   assert.deepEqual(imageWordAtPoint(unit, rect, 70, 70), { block: 0, start: 0, end: 8 });
   assert.equal(imageSpan(unit, rect, 0, 0, 8).rects[0].left, 60);
   assert.equal(imageWordAtPoint(unit, rect, 500, 400), null);
-  assert.throws(() => ocrBlocks({ lines: [{ ...line('😀 word'), words: [{ start: 0, end: 99, box: box(.1, .1) }] }] }), /word coordinates/);
-  assert.throws(() => ocrBlocks({ lines: [{ ...line('word'), box: box(-1, .1) }] }), /page coordinates/);
+  assert.throws(() => ocrBlocks(recognized([{ ...line('😀 word'), words: [{ start: 0, end: 99, box: box(.1, .1) }] }])), /word coordinates/);
+  assert.throws(() => ocrBlocks(recognized([{ ...line('word'), box: box(-1, .1) }])), /page coordinates/);
+  assert.throws(() => ocrBlocks({ lines: [line('word')] }), /image dimensions/);
 });
 
 test('source host prepares two units, restores the visible page and retains bounded history as reading advances', async () => {
@@ -60,10 +62,35 @@ test('source host prepares two units, restores the visible page and retains boun
   await host.dispose(); assert.equal(fixture.disposed, true);
 });
 
+test('OCR preserves paragraph indents on a wide spread and joins a sentence across columns with original word geometry', () => {
+  const response = { width: 2000, height: 1000, lines: [
+    line('An earlier paragraph ends.', .065, .05),
+    line('The next paragraph reaches', .065, .10),
+    line('another gate that creaks', .05, .15),
+    line('with the sound of metal on metal.', .55, .05),
+    line('A different paragraph ends.', .565, .10),
+    line('An indented ending.', .565, .15)
+  ] };
+  const blocks = ocrBlocks(response);
+  assert.deepEqual(blocks.map(b => b.text), [
+    'An earlier paragraph ends.',
+    'The next paragraph reaches\nanother gate that creaks\nwith the sound of metal on metal.',
+    'A different paragraph ends.', 'An indented ending.'
+  ]);
+  const offset = blocks[1].text.indexOf('with');
+  const unit = { blocks }, rectangle = { left: 0, top: 0, width: 2000, height: 1000 };
+  assert.deepEqual(imageWordAtPoint(unit, rectangle, 1120, 60), { block: 1, start: offset, end: blocks[1].text.length });
+  assert.equal(imageSpan(unit, rectangle, 1, offset, offset + 4).rects[0].left, 1100);
+  // A new paragraph indent at the top of the next column must not be joined.
+  response.lines[3] = line('A new indented paragraph.', .565, .05);
+  response.lines.push(line('A left-aligned continuation.', .55, .20));
+  assert.ok(!ocrBlocks(response).some(b => b.text.includes('creaks\nA new indented')));
+});
+
 test('opening follows a page that changes during OCR instead of publishing stale word coordinates', async () => {
   const fixture = pages(async image => {
     if (image === '0') await fixture.access.turn(1);
-    return { lines: [line(`page ${image}`)] };
+    return recognized([line(`page ${image}`)]);
   });
   const unit = await fixture.adapter.open();
   assert.equal(unit.id, 'page-1'); assert.equal(unit.blocks[0].text, 'page 1');
@@ -72,7 +99,7 @@ test('opening follows a page that changes during OCR instead of publishing stale
 
 test('cancel during future-page OCR restores the source before cleanup finishes and permits retry', async () => {
   let started, blocked = true;
-  const fixture = pages((image, signal) => image === '0' || !blocked ? Promise.resolve({ lines: [line('current')] })
+  const fixture = pages((image, signal) => image === '0' || !blocked ? Promise.resolve(recognized([line('current')]))
     : new Promise((resolve, reject) => { started = resolve; signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true }); }));
   const first = await fixture.adapter.open();
   const pending = fixture.adapter.prepareNext(first.id).catch(error => error);
@@ -83,7 +110,7 @@ test('cancel during future-page OCR restores the source before cleanup finishes 
 });
 
 test('OCR failure after turning records actual position and restores it; failed restoration releases the UI with an explicit error', async () => {
-  const fixture = pages(async image => { if (image !== '0') throw new Error('OCR failed'); return { lines: [line('current')] }; });
+  const fixture = pages(async image => { if (image !== '0') throw new Error('OCR failed'); return recognized([line('current')]); });
   const first = await fixture.adapter.open();
   await assert.rejects(fixture.adapter.prepareNext(first.id), /OCR failed/);
   assert.equal(fixture.index, 0); assert.equal(fixture.covered, false);

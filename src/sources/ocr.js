@@ -1,3 +1,5 @@
+import { hasTerminalPunctuation } from '../text-segmentation.js';
+
 const validBox = box => box && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(box[key]))
   && box.x >= 0 && box.y >= 0 && box.width > 0 && box.height > 0 && box.x + box.width <= 1.001 && box.y + box.height <= 1.001;
 
@@ -6,6 +8,8 @@ const validBox = box => box && ['x', 'y', 'width', 'height'].every(key => Number
 export function ocrBlocks(value) {
   if (!value || !Array.isArray(value.lines) || !value.lines.length || value.lines.length > 2000)
     throw new Error('No readable text was found on this page.');
+  if (!Number.isSafeInteger(value.width) || !Number.isSafeInteger(value.height) || value.width <= 0 || value.height <= 0)
+    throw new Error('The text recognizer returned invalid image dimensions.');
   const lines = value.lines.map(line => {
     if (typeof line.text !== 'string' || !line.text.length || !validBox(line.box) || !Array.isArray(line.words))
       throw new Error('The text recognizer returned invalid page coordinates.');
@@ -30,10 +34,17 @@ export function ocrBlocks(value) {
     column.sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x);
     const heights = column.map(line => line.box.height).sort((a, b) => a - b), height = heights[Math.floor(heights.length / 2)];
     const edge = Math.min(...column.map(line => line.box.x));
-    let block, previous;
+    // x and y are normalized against different image dimensions. Compare
+    // indentation and glyph height in the same units, especially on a spread.
+    const indent = height * value.height / value.width * .5;
+    const first = column[0], preceding = blocks.at(-1);
+    // A column is a visual wrap, not a paragraph. Retain one source block so
+    // the formatter/planner and original-image word markers share this fact.
+    let block = preceding && !hasTerminalPunctuation(preceding.text) && first.box.x <= edge + indent ? preceding : null;
+    let previous;
     for (const line of column) {
-      if (!block || line.box.y - (previous.box.y + previous.box.height) > height * .65
-        || (line.box.x > edge + height * .5 && /[.!?。！？”"]$/.test(previous.text))) {
+      if (!block || previous && (line.box.y - (previous.box.y + previous.box.height) > height * .65
+        || (line.box.x > edge + indent && hasTerminalPunctuation(previous.text)))) {
         block = { text: '', words: [] }; blocks.push(block);
       }
       // Keep visual line breaks until page preparation. A space would erase

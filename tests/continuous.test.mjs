@@ -10,9 +10,9 @@ import { ReadingSession } from '../src/reading-session.js';
 globalThis.requestAnimationFrame = () => 1;
 globalThis.cancelAnimationFrame = () => {};
 class AudioFixture extends EventTarget {
-  currentTime = 0; paused = true;
+  currentTime = 0; paused = true; pauses = 0;
   async play() { this.paused = false; this.dispatchEvent(new Event('playing')); }
-  pause() { this.paused = true; }
+  pause() { this.paused = true; this.pauses++; }
   load() { this.currentTime = 0; }
   removeAttribute() {}
 }
@@ -123,6 +123,73 @@ test('a page transition plays its ready first paragraph while an unfinished back
   await session.stop();
 });
 
+test('a slow page presentation never pauses a buffered continuation and cannot undo a user pause', async () => {
+  const a = unit('a', ['A gate that creaks']), b = unit('b', ['with the sound of metal on metal.', 'A new paragraph.']);
+  let session, release, visible = a;
+  const audio = new AudioFixture();
+  const marks = [];
+  const engine = new ReaderEngine({ audio, cache,
+    prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, async chunk => transformContent(chunk, formatted(chunk.text))),
+    generate: async text => clip(text), onUpdate: state => session?.observe(state), onHighlight: word => marks.push(word) });
+  session = new ReadingSession({ engine, createAudio: () => new AudioFixture(), transport: { request: async message => {
+    if (message.type === 'source-next') return message.after === 'a' ? [b] : [];
+    if (message.type === 'source-present') { await new Promise(resolve => { release = resolve; }); visible = b; }
+    return visible;
+  } } });
+  session.load(a, settings); await session.play(); await session.pending;
+  const word = engine.segments[0].result.words.find(word => word.word === 'with');
+  const pauses = audio.pauses;
+  audio.currentTime = word.start; engine.tick(); await until(() => release);
+  assert.equal(audio.pauses, pauses); assert.equal(audio.paused, false);
+  audio.currentTime = word.end; engine.tick();
+  assert.equal(audio.pauses, pauses, 'audio keeps advancing while navigation is pending');
+  session.pause(); release(); await until(() => !session.presenting);
+  assert.equal(audio.paused, true); assert.equal(engine.wantsPlay, false);
+  assert.equal(session.displayed, 'b');
+  assert.equal(marks.at(-1).block, 0);
+  await session.stop();
+});
+
+test('an entire lookahead page consumed by a concurrent continuation never creates an empty content artifact', async () => {
+  const a = unit('a', ['A gate that creaks']), b = unit('b', ['with the sound of metal on metal.']);
+  let session, visible = a;
+  const errors = [], spoken = [];
+  const engine = new ReaderEngine({ audio: new AudioFixture(), cache,
+    prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal),
+    generate: async text => { spoken.push(text); return clip(text); }, onUpdate: state => session?.observe(state) });
+  session = new ReadingSession({ engine, onError: error => errors.push(error.message), createAudio: () => new AudioFixture(),
+    transport: { request: async message => {
+      if (message.type === 'source-next') return message.after === 'a' ? [b] : [];
+      if (message.type === 'source-present') visible = b;
+      return visible;
+    } } });
+  session.load(a, { ...settings, improveText: false }); await session.play(); await session.pending;
+  assert.deepEqual(errors, []);
+  assert.equal(engine.state, 'playing');
+  assert.deepEqual(spoken, ['A gate that creaks with the sound of metal on metal.']);
+  await session.stop();
+});
+
+test('the next ready page starts playing before slow visual presentation completes', async () => {
+  const a = unit('a', ['An opening paragraph ends.']), b = unit('b', ['The next paragraph is ready.']);
+  let session, release, visible = a;
+  const audio = new AudioFixture();
+  const engine = new ReaderEngine({ audio, cache,
+    prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, async chunk => chunk),
+    generate: async text => clip(text), onUpdate: state => session?.observe(state) });
+  session = new ReadingSession({ engine, createAudio: () => new AudioFixture(), transport: { request: async message => {
+    if (message.type === 'source-next') return message.after === 'a' ? [b] : [];
+    if (message.type === 'source-present') { await new Promise(resolve => { release = resolve; }); visible = b; }
+    return visible;
+  } } });
+  session.load(a, settings); await session.play(); await session.pending;
+  const advancing = engine.next(); await until(() => release);
+  await until(() => engine.state === 'playing' && session.unit.id === 'b');
+  assert.equal(visible.id, 'a'); assert.equal(audio.paused, false);
+  release(); await advancing; await until(() => !session.presenting);
+  assert.equal(session.displayed, 'b'); await session.stop();
+});
+
 test('Stop during page preparation cannot publish new passages or start late audio', async () => {
   let release;
   const engine = new ReaderEngine({ audio: new AudioFixture(), cache,
@@ -181,8 +248,25 @@ test('an LLM-inserted blank line cannot cut a source paragraph into separate aud
     { start: at + 2, end: text.length, from: at + 1, to: original.length, identity: true }
   ] };
   const prepared = await prepareReadingUnit(unit('ocr', [first, second]), settings, undefined, async chunk => transformContent(chunk, record));
-  assert.deepEqual(prepared.passages.map(piece => piece.text), ['First sentence.\n\nSecond sentence ends.', second]);
+  assert.deepEqual(prepared.passages.map(piece => piece.text), ['First sentence. Second sentence ends.', second]);
   assert.equal(prepared.passages[1].sourceRanges[0].block, 1);
+});
+
+test('OCR soft wraps never reach speech after a rejected or disabled formatter, preserving paragraphs and word source positions', async () => {
+  const original = unit('spread', ['😀 A gate that creaks\nwith the sound of metal on metal.', 'A well-\nknown place.']);
+  for (const improveText of [true, false]) {
+    let calls = 0;
+    const prepared = await prepareReadingUnit(original, { ...settings, improveText }, undefined, async chunk => { calls++; return chunk; });
+    assert.equal(calls, improveText ? 1 : 0);
+    assert.deepEqual(prepared.passages.map(piece => piece.text), [
+      '😀 A gate that creaks with the sound of metal on metal.', 'A well-known place.'
+    ]);
+    const passage = prepared.passages[0], offset = passage.text.indexOf('with');
+    const aligned = prepared.align(passage, [{ word: 'with', start: 0, end: .1, from: offset, to: offset + 4 }]);
+    assert.equal(aligned[0].from, original.blocks[0].indexOf('with'));
+    assert.equal(aligned[0].to, original.blocks[0].indexOf('with') + 4);
+    assert.equal(passage.sourceContent.paragraphs.length, 2);
+  }
 });
 
 

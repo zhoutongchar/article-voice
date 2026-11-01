@@ -3,6 +3,7 @@ import speechPolicy from '../local/speech-policy.json' with { type: 'json' };
 // sentences. A single long sentence stays intact, never cut at a word count.
 export const PARAGRAPH_CHARACTERS = speechPolicy.paragraphCharacters;
 const abbreviation = new RegExp(`\\b(?:${speechPolicy.abbreviations.map(value => value.replaceAll('.', '\\.')).join('|')}|\\p{L})\\.$`, 'iu');
+export const hasTerminalPunctuation = text => /[.!?。！？](?:[”’"')\]]*)\s*$/u.test(text || '');
 export function sentencePassages(text) {
   const result = [];
   const append = (start, end) => {
