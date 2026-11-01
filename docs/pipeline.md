@@ -201,10 +201,23 @@ replay. The installed Chrome extension's sample reading passed speech, original
 word highlighting, paragraph progression, formatter-disabled playback and 3x
 speed. Word clicks changed playback position during that sample check.
 
-A fresh native-only Kindle tab passed OCR reading, original-image word
-highlighting and lookahead preparation: the current page reached 5/5 chunks
-ready with another page ready. The Mac locked before the automatic page-turn
-result could be observed, so that part of the 0.8.0 installed-extension test is
-unfinished. Claiming the Kindle tab with browser automation reproduced the known
-protected-frame interruption; the native-only tab avoided it. Earlier complete
-live Kindle page-turn results remain version-specific in the root README.
+Live Kindle testing passed OCR reading, original-image word highlighting and
+lookahead preparation. After the initial run was interrupted by screen lock,
+native Chrome testing resumed with the installed 0.8.0 app and extension on
+November 1, 2026. Untouched playback at 3x advanced through different page images
+with displayed locations 635, 647 and 672 in Fourth Wing. Source highlighting
+continued after the automatic turns. Pause/resume worked; Stop cleared marks
+and closing the player left Kindle's own controls available.
+
+One boundary exhausted its ready audio while the next page was pending, then
+continued without input. This verifies automatic continuation, not gapless
+playback or word-for-word coverage of the whole book. Location labels can lag
+the displayed image and are only observational metadata. This run covers one
+book and Mac. The optional alignment-prefetch experiment was not installed or
+enabled during it.
+
+Claiming a Kindle tab with browser automation reproduced the known protected-frame
+interruption. The resumed run used native window controls and a newly opened
+player. Fresh book loads temporarily returned Amazon's unavailable page, so
+the test used the already-loaded reader. Screenshots and the result record are
+retained locally under `test-results/e2e-080/` and are not published with source.
