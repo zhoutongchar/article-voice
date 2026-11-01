@@ -10,3 +10,5 @@ __pycache__/
 *.pyc
 article-voice-chrome.zip
 .DS_Store
+macos/.build/
+macos/build/

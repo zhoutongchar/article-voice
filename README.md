@@ -1,112 +1,102 @@
 # Article Voice
 
-A separate Chrome extension for listening to web articles with Cartesia or local Qwen3-TTS voices. It supports **0.5×–3× pitch-preserving playback**, highlights the spoken word on the original page, and scrolls to keep that word visible.
+Listen to Chrome articles with natural voices running on your Mac. Follow the spoken word on the original page, click any word to seek, and listen at **0.5×–3×** with pitch preserved.
 
-An independent implementation; it does not use Lisen code or branding.
+**[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1)** · [Mac app architecture and build](macos/README.md)
 
-## Install
+![Article Voice's thin audio player](docs/images/minimal-player.png)
 
-The ready-to-load extension is in `dist/`.
+## Install the preview
 
-1. Open `chrome://extensions` in Chrome.
-2. Enable **Developer mode**.
-3. Choose **Load unpacked** and select `/Users/tong/Desktop/code/article-voice/dist`.
-4. Open a normal article tab and click **Article Voice** in Chrome’s Extensions menu. Pin it for quicker access.
-5. Open **Settings** and choose a voice provider. For Cartesia, paste your API key and click **Connect**. For local Qwen, start the companion below and choose **Qwen3-TTS · on this Mac**.
-6. Press Play. Choose **3×** from the speed menu. **Follow words** controls automatic scrolling.
+Requires **Apple Silicon, macOS 26 or later, and Google Chrome**. This preview has been exercised on an M5 Max with 36 GB RAM; smaller Macs have not been verified.
 
-Click a word in the article to start listening from that word, or jump backward/forward during playback. The selected speed stays in effect. Dragging to select text, modified clicks and links keep their normal behavior. A passage that is not ready is generated before seeking to its word timestamp; an unavailable word timing is reported rather than guessed.
+1. Download **Article Voice.zip** from the release, unzip it, and open **Article Voice.app**.
+2. Click **Install Article Voice**. It installs into `~/Applications` and prepares the voices. The first setup downloads **3.61 GB** of model files, with progress, pause/resume, and checksum verification. Python and the speech runtime are included in the app.
+3. Click **Connect Chrome**. In `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder below. In the folder picker, **Command–Shift–G** lets you paste the path:
 
-After rebuilding, use **Reload** on the extension’s card, then close and reopen the on-page player.
+   ```text
+   ~/Applications/Article Voice.app/Contents/Resources/ChromeExtension
+   ```
 
-Version 0.2.3 supports Cartesia and local Qwen. A saved selection for a removed provider automatically returns to Qwen and restores the saved Qwen voice where available. Obsolete provider profiles are removed; cloud credentials and playback preferences are retained. The Qwen endpoint remains `http://127.0.0.1:4318`.
+4. Click **Try a reading** in the app, or open an article and click Article Voice in Chrome's Extensions menu. Press **Play**.
 
-## Local Qwen3-TTS on Apple Silicon
+This is an **ad-hoc signed, unnotarized developer preview**. If macOS blocks opening it, review [Apple's instructions for opening a trusted downloaded app](https://support.apple.com/en-us/102445), including **System Settings → Privacy & Security → Open Anyway**. No Chrome Web Store listing is available. Chrome's [unpacked-extension installation](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked) requires Developer mode to remain enabled.
 
-The local companion uses MLX-Audio 0.6.3, the 4-bit Qwen3-TTS 1.7B Base model with a fixed voice reference, and Qwen3-ForcedAligner 0.6B to measure word timestamps from the generated audio. The CustomVoice model creates a permanent reference recording once for each preset; it is released before loading the narrator. Model revisions and generation settings are pinned in `local/config.json`. The Mac needs Apple Silicon and sufficient available memory; this checkout was verified on an M5 Max with 36 GB.
+The separate **Article Voice Chrome.zip** download contains the same extension for manual installation. Unzip it into a permanent folder and choose that folder with **Load unpacked**; the Mac app is still required for local voices. The app's bundled extension is the recommended preview setup.
 
-```sh
-cd /Users/tong/Desktop/code/article-voice
-npm run local:setup  # first setup: isolated Python 3.12 environment
-npm run local       # keep this terminal open while reading
-```
+## Reading
 
-First startup downloads the model weights to Hugging Face’s local cache (several GB). Later starts reuse those files. The service binds only to `127.0.0.1:4318`; it is not exposed to your network. Stop it with Control-C. No service is installed to start automatically.
+- **Nine voices** use permanent reference recordings to keep the speaker consistent across passages and articles.
+- **Minimal / Compact / Full** buttons switch between a thin audio bar, a compact player, and a player with settings. All three include **Follow words**.
+- **Word highlighting and seeking:** the current passage stays green, the spoken word is yellow, and clicking a word moves playback there.
+- **Your scrolling takes priority:** manual scrolling pauses automatic page following for ten seconds after your latest gesture. Speech and word highlighting continue.
+- **Listen as passages are ready** is the default. Full view also offers **After the whole article is ready**, useful when generation cannot keep up at 3×.
+- **Local audio caching** reuses speech for the same text, voice, and language. Speed changes do not generate new audio. Save WAV and Open saved audio can preserve a reading with its word timings.
 
-The installed model files total about **5.93 GB**: Base narrator 2.34 GB, CustomVoice reference generator 2.31 GB, and word aligner 1.28 GB. The reference generator is not loaded on later starts when all nine saved references are present. The Python environment adds about 0.6 GB; RAM use is separate from these disk sizes.
+After setup, you can close or quit the Mac app. Chrome starts the bundled speech helper when needed; it exits after ten minutes without requests. No terminal command, API key, or Accessibility permission is required. Once models are installed, speech works offline for articles already available in Chrome.
 
-Each preset has one reference recording and its exact input transcript in `.cache/voice-references/`. Every paragraph and preview uses the same recording for that preset, across articles and server restarts. Saved reference audio is checked against its content digest. A changed reference cannot silently replace a cached voice; reconnecting loads its current identity. The speech cache includes the reference identity and generation settings, so the older independently generated paragraph recordings are not reused. **Clear cache** removes saved article audio and retains the fixed voice references.
+To update, install the newer app, click **Reload** on Article Voice in `chrome://extensions`, and refresh your article tab. Models and saved voice references remain installed. If the extension is removed or disabled, the app offers **Reconnect Chrome** after its connection check expires; Chrome may clear the extension's saved audio on removal.
 
-Natural intonation and rhythm can still vary with text. Fixed reference conditioning does not guarantee identical perceived timbre in every sentence. English and Chinese output are exercised here; other target languages remain unverified. Choose the article language explicitly when appropriate.
+## Local speech and privacy
 
-Reload the extension in `chrome://extensions`, refresh the article tab, then open **Settings → Voice provider → Qwen3-TTS · on this Mac**. Select **Ryan** or **Aiden** for native English, **Serena**, **Vivian**, or **Uncle Fu** for native Chinese; all nine speakers can read the supported languages. **Connect local server** retries a stopped/unavailable connection. Cartesia settings are retained separately when switching providers.
+The Mac reader uses **Qwen3-TTS 1.7B Base, quantized to 4-bit**, through MLX-Audio, with **Qwen3-ForcedAligner 0.6B** for measured word timings. Each preset uses the same reference recording and transcript across passages. Model revisions, generation settings, download sizes, and SHA-256 digests are pinned in [`local/config.json`](local/config.json) and [`local/model-files.json`](local/model-files.json).
 
-Local speech has no per-character API fees. It uses the Mac’s GPU, memory and electricity. Article text goes to the loopback companion, and speech plus alignment run on this Mac. There is no fallback to a paid provider. Normal-speed audio is generated once; 3× is local playback. If generation cannot keep up with listening at 3×, use **Generate all** or **After the whole article is ready**. Voice quality and waiting time depend on the model and text.
+Article text and generated speech stay on this Mac in the app flow. Setup downloads public model files from Hugging Face. There is no analytics, telemetry, paid API requirement, or automatic cloud fallback. The extension stores preferences locally and caches audio in IndexedDB with a 128 MB budget. Clearing audio cache retains the voice references.
 
-The ten Qwen languages are English, Chinese, Spanish, French, German, Japanese, Korean, Portuguese, Italian and Russian. Choose the language explicitly when Auto is unsuitable. Qwen’s built-in voices differ from Cartesia voices; this does not clone Cartesia voices.
+Chrome permissions cover reading a page after you invoke the extension, local storage, background connection checks, and Native Messaging. The code also retains an optional Cartesia development adapter and its API host permission; the Mac reader fixes the provider to local speech and exposes no model/provider selector. Native speech uses the app-managed loopback engine on port **4324**. The standalone developer endpoint on **4318** remains independent.
 
-## Features
+## Limitations
 
-- Mozilla Readability extracts the main article. Source coordinates map the result back to the original text, including links and inline formatting.
-- Cartesia Sonic 3.6, 3.5 and 3 are selectable. The voice picker offers female, male and neutral types; warm, calm, expressive, narration and conversational style searches; language filtering; and pagination. Types/descriptions come from Cartesia, and an empty filter preserves your selected voice. Reopening Settings refreshes the library instead of showing only one saved voice.
-- **Preview voice** plays a short sample at normal speed and pauses article playback so the sounds do not overlap. Cartesia previews use credits; local Qwen previews run on the Mac. Both are cached for reuse.
-- The first passage plays as soon as it is generated. Up to two more passages are prepared ahead. **Generate all** or the ahead-of-time mode prepares the complete article.
-- Word timing comes from Cartesia’s original-text timestamps or the local Qwen forced aligner. The green passage highlight stays stable within a paragraph; the yellow word marker holds through breath/punctuation gaps and moves when the next word starts. Both follow the audio’s media clock, including at 3×, after seeking, and after pause/resume. Unmatched words have no fabricated highlight.
-- Speed changes are local and preserve pitch. They reuse generated audio.
-- A local audio cache avoids generating the same text again with the same voice, model and language. **Clear cache** removes persisted recordings. Active readings and persisted cache each have a 128 MB budget.
-- **↓ WAV** exports normal-speed audio with embedded word timings. **Settings → Open saved WAV** restores read-along on a page with exactly the same article text; no API key is needed for the imported recording.
-- Closing or leaving the page stops playback. **Stop** cancels generation; a provider may still charge for audio already generated.
+This reads article text exposed in the page DOM. Chrome internal pages, the Web Store, Chrome's built-in PDF viewer, cross-origin embedded articles, and canvas-only text are unsupported. Paywalled content must already be visible to you. Complex or changing pages may need the reader reopened. This is a Chrome reader, not a system-wide reader for Kindle or other Mac apps.
 
-## Data and permissions
+Speech begins passage by passage after generation and alignment, rather than playing the first raw audio packet. Faster playback may wait for generation to catch up. Reference conditioning improves speaker consistency but does not guarantee identical perceived timbre in every sentence. English and Chinese output have been exercised; other model languages remain unverified.
 
-Cartesia mode contacts `https://api.cartesia.ai`. Local Qwen mode contacts the companion at `http://127.0.0.1:4318`; the companion downloads public model files at setup and performs inference locally. The local server does not accept browser requests from unrelated websites.
+## Develop
 
-The API key and preferences stay in `chrome.storage.local`, restricted to trusted extension contexts. They are not synced to Chrome Sync. Audio and timing data are cached in the extension’s IndexedDB. **Forget key** removes the saved key. Cartesia receives article text only when you play or generate audio; voice lookup sends the key and search query to Cartesia.
-
-Permissions are `activeTab`, `scripting`, `storage`, and access to the Cartesia API and loopback host. Page access starts when you click the extension; it does not request permanent access to every site. There is no analytics or telemetry.
-
-## Develop and verify
+Use the Node version in `.nvmrc` and npm version in `package.json`. For speech and app builds, also use Python 3.12, `uv`, Apple Silicon, and the macOS 26 Swift toolchain.
 
 ```sh
-PATH="/usr/local/bin:$PATH" npm ci
-PATH="/usr/local/bin:$PATH" npm run check
-PATH="/usr/local/bin:$PATH" npm run dev
+git clone https://github.com/zhoutongchar/article-voice.git
+cd article-voice
+npm ci
+npm run check
+npm run dev
 ```
 
-Open `http://127.0.0.1:4317` in Chrome and click **Run browser checks**. The development page runs the same extraction, player, alignment, cache-key and playback modules, with an isolated test bridge and a recorded speech fixture. Test code and the local server are excluded from `dist/`.
+Open `http://127.0.0.1:4317` in Chrome. **Test player UX** and **Run browser checks** exercise the production reader modules with a recorded fixture. Fixture timestamps do not establish real model alignment accuracy. Development servers and test code are excluded from the extension build.
 
-The fixture verifies browser behavior; its evenly distributed test timestamps do **not** establish Cartesia pronunciation or live timestamp accuracy. The test panel labels this mode explicitly.
+For real local speech:
 
-With the local companion running, click **Open local reader** to read the full public article with real Qwen speech. **Test local Qwen** verifies actual local generation of three public article paragraphs, shared-reference identity, measured alignment, playback, pause, word clicks, 3×, paragraph transitions and persistent-cache reuse. This test does not use the recorded fixture. Run `.venv/bin/python tests/local_server_test.py` for loopback HTTP boundary checks and `.venv/bin/python tests/voice_reference_test.py` for reference persistence and runtime conditioning checks without loading speech models.
-
-To run the live service check, place a key in the project’s gitignored `.env`:
-
-```dotenv
-CARTESIA_API_KEY=your_key_here
+```sh
+npm run local:setup
+npm run local
 ```
 
-Then click **Test live Cartesia**. The loopback-only test proxy reads the key without returning it to the page and sends one public test paragraph through Cartesia’s real SSE endpoint. It tests playback, timestamp-based highlighting and 3× speed. It does not put the key in the installed extension; connect that separately in its Settings. The default live-test voice is the public voice in Cartesia’s current API example; set `CARTESIA_VOICE_ID` in the development server’s environment to use another voice.
+The standalone server binds only to `127.0.0.1:4318`. First startup prepares nine permanent voice references and downloads pinned narrator, reference-generator, and aligner weights (about **5.93 GB** total for development). The installed app instead includes prepared references and downloads only the narrator and aligner (**3.61 GB**). Once the standalone server reports ready, **Open local reader** and **Test local Qwen** in the browser harness use real speech. Stop the server with Control-C.
 
-## Verification so far
+To package the Mac app after the references are prepared:
 
-- Version 0.2.3 `npm run check`: build and 31 code tests passed, including recovery from a removed saved provider without switching to cloud generation.
-- Version 0.2.3: Qwen and recorded-fixture Chrome suites passed after removing the experimental provider. Qwen playback measured 2.97× with pitch preservation; word clicks, three-paragraph reference consistency, page highlighting, cache replay, nine voices and provider switching passed. Qwen remained ready on port 4318; the retired companion on port 4319 was stopped. Browser reports are in `test-results/qwen-baseline/`. These use the development harness; the installed-extension limitation below still applies.
-- Chrome browser suite: all checks passed using recorded audio; latest measured playback rate **2.97×** with pitch preservation enabled.
-- Browser checks covered extraction, audio playback, original-page word and passage highlighting, speed changes without regeneration, pause/resume, automatic scrolling and its toggle, complete generation, timeline seeking, WAV export/reimport, and Stop cleanup.
-- The browser suite also verified a new reading reuses audio from real IndexedDB. Chrome’s WAV download was checked on disk: valid 24 kHz mono PCM with 524 word timings across 19 source blocks. Automating a file-picker selection needs an additional permission in the browser-control extension; in-memory WAV export/reimport passed.
-- Added browser regressions for stable highlight objects/ranges through word timing gaps, multiple voice choices, gender/style/empty filters, saved selection, and preview playback. The demo has three distinct recorded test voices and explicitly labels them; those are not Cartesia quality samples.
-- Word-click browser regressions pass for forward/backward seeking at 3×, inline formatted words, selection/link/whitespace guards, and reopened WAV recordings. A real mouse click on the article also moved playback and the original-page highlight to the clicked word. Code tests cover a later click superseding an unfinished seek and tab-specific message routing.
-- Version 0.2.1: real Qwen Base narration of three English paragraphs used the same reference identity. Browser checks passed for word clicks, pause, persisted-cache reuse, 3× playback (measured 2.97×), automatic paragraph transitions and matching page highlights. Nine voice choices and provider-switch settings restoration passed. Two Chinese paragraphs used the same Serena reference. All nine reference identities and WAV modification times were unchanged after a real server restart. Other target languages remain unverified.
-- Five HTTP boundary checks and five reference/runtime checks passed. The latter covers persistence, changed-reference detection, voice/recipe identity and conditioning each paragraph on the same reference audio plus transcript.
-- Current fixed-reference English samples contain 12.64–14.96 s of audio, generated and aligned in 2.29–4.28 s. Chinese samples contain 12.16–14.16 s, generated and aligned in 2.22–3.06 s. These short samples do not establish throughput for every article or language.
-- Audio, raw results and browser reports are in `test-results/voice-consistency/`. A small comparison using Qwen's own speaker encoder was inconclusive and does not establish audible improvement; see `speaker-comparison.json`. The three-paragraph listening sample is `fixed-ryan-three-paragraphs.wav`.
-- Screenshots: `test-results/browser-3x.png`, `test-results/local-qwen-browser.png`, and `test-results/voice-consistency/fixed-reference-browser.png`.
-- **Pending:** real Cartesia generation and an installed-extension smoke test. A Cartesia key was unavailable, and browser automation could not access Chrome’s extension manager. Those are separate from the passing fixture-based browser test.
+```sh
+npm run mac:build
+```
 
-## Limits
+See [`macos/README.md`](macos/README.md) for the bundle layout, native protocol, and signing requirements. No release signing identity is included in this repository.
 
-Chrome’s internal pages, Web Store, built-in PDF viewer, cross-origin embedded articles, and text not exposed in the page DOM are not supported. Paywalled content must already be visible to you. Complex pages and articles that rewrite themselves may need the player reopened. The reader does not bypass access controls.
+Additional checks:
 
-At 3×, pitch is preserved, but naturalness and intelligibility depend on the voice and listener. Streaming here means passage-by-passage playback with prefetch, rather than playback of the first raw PCM packet. If generation cannot keep up, playback waits for the next passage.
+```sh
+.venv/bin/python -m unittest discover -s tests -p '*_test.py'
+npm run mac:check
+```
 
-Mozilla Readability is distributed under Apache-2.0; its license is included in `dist/READABILITY-LICENSE.txt`.
+The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a gitignored `.env`; see `.env.example`. Never commit credentials or generated model caches.
+
+## Verification
+
+For the 0.5.1 preview, prior local verification passed JavaScript checks and browser harness checks for the three layouts, playback continuity, whole-article mode, and the ten-second scroll suspension. The minimal player measured **480 × 52 CSS pixels**. Real Qwen checks exercised speech, measured alignment, nine voices, word seeking, cached replay, and playback around 3× on the test Mac. The user also confirmed that the installed extension's sample reading works.
+
+The browser harness uses production reader modules with a development transport; it is not an automated installed-extension end-to-end check. Browser-control interference prevented reliable automation of the installed player. Model download resume and integrity are tested with a controlled HTTP server; a complete uncached 3.61 GB download has not been repeated. Signing/notarization and a clean-machine install remain unverified.
+
+## Credits
+
+Article extraction uses [Mozilla Readability](https://github.com/mozilla/readability), with its [Apache-2.0 notice](public/READABILITY-LICENSE.txt). Speech uses [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), MLX Community quantizations, and [MLX-Audio](https://github.com/Blaizzy/mlx-audio). Model attribution and bundled third-party notices are in [`macos/Resources/Licenses`](macos/Resources/Licenses). This is an independent implementation and does not use Lisen code or branding.

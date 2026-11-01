@@ -5,7 +5,7 @@ import { alignWords, wordAtPosition } from '../src/alignment.js';
 import { splitPassages } from '../src/article.js';
 import { cacheKey } from '../src/cache.js';
 import { readRecording } from '../src/recording.js';
-import { parseVoice, voiceLabel, voiceSearch } from '../src/voices.js';
+import { parseVoice } from '../src/voices.js';
 
 test('SSE accepts split UTF-8, CRLF, multiple events and an unterminated final event', async () => {
   const encoded = new TextEncoder().encode(': keepalive\r\ndata: {"type":"timestamps","word":"中文"}\r\n\r\ndata: {"type":"done"}');
@@ -118,10 +118,8 @@ test('voice metadata preserves provider descriptions and omits unknown type and 
   const voice = parseVoice({ id: 'voice', name: 'Test', gender: 'feminine', description: 'Calm narrator', language: 'en',
     accents: [null, { accent: 'general-american', is_native: true }, { accent: 5 }] });
   assert.equal(voice.description, 'Calm narrator'); assert.equal(voice.accents.length, 1);
-  assert.equal(voiceLabel(voice), 'Test · Female · general american');
-  assert.equal(voiceLabel(parseVoice({ id: 'unknown', name: 'Saved voice' })), 'Saved voice');
+  assert.deepEqual(parseVoice({ id: 'unknown', name: 'Saved voice' }), { id: 'unknown', name: 'Saved voice' });
   assert.equal(parseVoice(null), null);
-  assert.equal(voiceSearch('calm', ' British '), 'calm British');
 });
 
 test('saved WAV validates article identity and word coordinates before restoring', async () => {

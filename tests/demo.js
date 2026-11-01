@@ -4,7 +4,7 @@ const output = document.getElementById('test-result');
 function openReader(mode = 'fixture') {
   if (reader?.host.isConnected && readerMode === mode) return;
   reader?.cleanup(); readerMode = mode;
-  reader = mountReader({ openFrame: `/player.html${mode === 'live' ? '?live=1' : mode === 'local' ? '?local=1' : ''}`,
+  reader = mountReader({ openFrame: `/player.html${mode === 'live' ? '?live=1' : mode === 'local' ? `?local=1${location.search.includes('app=1') ? '&app=1' : ''}` : ''}`,
     sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
     onRequest(handle, frame) {
     const listener = async event => {
@@ -17,6 +17,73 @@ function openReader(mode = 'fixture') {
   } });
 }
 document.getElementById('open-reader').onclick = () => openReader();
+document.getElementById('ux-tests').onclick = async () => {
+  const button = document.getElementById('ux-tests'); button.disabled = true;
+  const lines = [], pass = message => { lines.push(`PASS · ${message}`); output.textContent = lines.join('\n'); };
+  try {
+    reader?.cleanup(); reader = null; openReader();
+    await waitFor(() => reader.frame.contentWindow.testPlayer?.engine.segments.length, 'Player did not initialize');
+    const win = reader.frame.contentWindow, player = win.testPlayer, engine = player.engine;
+    const $ = id => win.document.getElementById(id);
+    if (player.getSettings().mode !== 'stream') throw new Error('Passage playback is not the default');
+    if ($('provider') || $('model') || $('voice-gender') || $('voice-style') || win.document.querySelector('.provider')) throw new Error('Removed controls remain');
+    pass('No model/provider choices, voice filters, or provider badge; passage playback is the default');
+    $('play').click(); await waitFor(() => engine.state === 'playing' && engine.audio.currentTime > .1, 'Playback did not start');
+    const startingTime = engine.audio.currentTime;
+    for (const layout of ['minimal', 'compact', 'full']) {
+      win.document.querySelector(`.view-switcher button[data-layout="${layout}"]`).click();
+      await waitFor(() => player.getSettings().layout === layout && reader.host.style.width === (layout === 'minimal' ? '480px' : '408px'), 'View did not resize');
+      const rect = $('follow').getBoundingClientRect();
+      if (rect.width <= 0 || rect.bottom > reader.frame.clientHeight) throw new Error('Follow words is missing from ' + layout);
+      if (layout === 'minimal' && reader.host.offsetHeight > 56) throw new Error('Minimal player is not a thin audio bar');
+      const active = win.document.querySelector('.view-switcher button[aria-pressed="true"]');
+      if (active?.dataset.layout !== layout) throw new Error('View buttons do not show the current view');
+      if ($('layout')) throw new Error('View dropdown was not removed');
+      if (layout === 'full' && $('settings').hidden) throw new Error('Full view lacks settings');
+      if (!engine.wantsPlay || engine.audio.currentTime < startingTime) throw new Error('Changing view interrupted playback');
+    }
+    pass('Minimal, compact and full views resize, retain Follow words, and preserve playback');
+    await waitFor(() => $('voice-results').textContent.startsWith('3 voices'), 'Voice choices missing');
+    if (Array.from($('voice').options).filter(option => option.value).length !== 3) throw new Error('Voice list is incomplete');
+    $('mode').value = 'ahead'; $('mode').dispatchEvent(new Event('change'));
+    await waitFor(() => player.getSettings().mode === 'ahead', 'Whole-article mode was not saved');
+    await engine.play();
+    if (engine.state !== 'playing' || engine.segments.some(segment => !segment.result)) throw new Error('Whole-article mode started before all audio was ready');
+    pass('Voice choices load; whole-article option prepares every passage before playback');
+    engine.pause(); $('mode').value = 'stream'; $('mode').dispatchEvent(new Event('change'));
+    await waitFor(() => player.getSettings().mode === 'stream', 'Passage mode was not restored');
+    win.document.querySelector('.view-switcher button[data-layout="compact"]').click();
+    const target = Math.floor(engine.segments.length * .75);
+    await engine.go(target); await engine.play();
+    await waitFor(() => window.scrollY > 300, 'Automatic following did not start');
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: -500 })); window.scrollTo({ top: 0, behavior: 'instant' });
+    await waitFor(() => !$('follow-status').hidden, 'Manual scroll pause was not shown');
+    const started = performance.now();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (window.scrollY > 10 || !engine.wantsPlay || !CSS.highlights.has('article-voice-word') || !$('follow').checked) throw new Error(`Manual scroll: y=${window.scrollY.toFixed(0)}, playing=${engine.wantsPlay}, highlighted=${CSS.highlights.has('article-voice-word')}, follow=${$('follow').checked}`);
+    await new Promise(resolve => setTimeout(resolve, 8000));
+    if (window.scrollY > 10) throw new Error('Follow resumed before ten seconds');
+    await waitFor(() => window.scrollY > 300 && $('follow-status').hidden, 'Follow did not automatically resume after ten seconds', 4000);
+    const elapsed = performance.now() - started;
+    if (elapsed < 9900) throw new Error('Scroll pause was shorter than ten seconds');
+    engine.pause();
+    pass(`Manual scroll holds the page for ten seconds (${(elapsed / 1000).toFixed(1)}s), keeps highlighting/audio, then resumes`);
+    document.body.dataset.uxTestResult = 'passed'; pass('PLAYER UX CHECKS PASSED');
+  } catch (error) { output.textContent = [...lines, `FAIL · ${error.message}`].join('\n'); document.body.dataset.uxTestResult = 'failed'; }
+  finally { button.disabled = false; }
+};
+document.getElementById('interrupt-reader').onclick = async () => {
+  if (!reader?.host.isConnected) openReader();
+  reader.frame.setAttribute('srcdoc', '');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const notice = reader.host.shadowRoot.querySelector('[role="alert"]');
+  if (!notice?.textContent.includes('End browser control') || CSS.highlights.has('article-voice-word')) {
+    output.textContent = 'FAIL · interrupted reader did not explain the problem and clear source markers';
+    return;
+  }
+  notice.querySelector('button').click();
+  output.textContent = reader.host.isConnected ? 'FAIL · interrupted reader did not close' : 'PASS · interrupted frame shows recovery instructions, clears source markers, and closes cleanly';
+};
 document.getElementById('open-local-reader').onclick = () => {
   reader?.cleanup(); reader = null;
   document.getElementById('test-mode').textContent = 'Actual local Qwen3-TTS · fixed voice reference · no cloud API';
@@ -41,7 +108,9 @@ function clickArticleWord(element, text, { select = false, ctrlKey = false, whit
   const clientX = whitespace ? element.getBoundingClientRect().left - 20 : (rect.left + rect.right) / 2;
   const clientY = (rect.top + rect.bottom) / 2;
   const target = whitespace ? element : node.parentElement;
+  if (!whitespace && document.elementFromPoint(clientX, clientY)?.closest('#test-tools')) throw new Error('The test panel covers the target word; use the responsive test layout.');
   target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX, clientY }));
+  target.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0, clientX, clientY }));
   target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, button: 0, clientX, clientY, ctrlKey }));
   return range;
 }
@@ -103,9 +172,6 @@ document.getElementById('run-tests').onclick = async () => {
     engine.pause();
     $('settings-toggle').click();
     await waitFor(() => $('voice-results').textContent.startsWith('3 voices'), 'Voice library did not load multiple choices');
-    $('voice-gender').value = 'masculine'; $('voice-gender').dispatchEvent(new Event('change'));
-    await waitFor(() => $('voice-results').textContent.startsWith('1 voice'), 'Male voice filter failed');
-    if (![...$('voice').options].some(option => option.value === 'recorded-daniel')) throw new Error('Filtered voice is missing');
     $('voice').value = 'recorded-daniel'; $('voice').dispatchEvent(new Event('change'));
     await waitFor(() => player.getSettings().voiceId === 'recorded-daniel', 'Voice choice was not saved');
     $('preview-voice').click();
@@ -113,21 +179,10 @@ document.getElementById('run-tests').onclick = async () => {
     if (engine.wantsPlay) throw new Error('Article and preview played over each other');
     $('preview-voice').click();
     await waitFor(() => !player.preview.wantsPlay, 'Preview did not stop');
-    $('voice-gender').value = ''; $('voice-gender').dispatchEvent(new Event('change'));
-    await waitFor(() => $('voice-results').textContent.startsWith('3 voices'), 'All voice types were not restored');
-    $('voice-gender').value = 'gender_neutral'; $('voice-gender').dispatchEvent(new Event('change'));
-    await waitFor(() => $('voice-results').textContent === 'No matching voices', 'Empty voice filter was not explained');
-    if (player.getSettings().voiceId !== 'recorded-daniel' || $('voice').value !== 'recorded-daniel') throw new Error('Filtering discarded the selected voice');
-    $('voice-gender').value = ''; $('voice-gender').dispatchEvent(new Event('change'));
-    await waitFor(() => $('voice-results').textContent.startsWith('3 voices'), 'Voice types did not reset');
-    $('voice-style').value = 'calm'; $('voice-style').dispatchEvent(new Event('change'));
-    await waitFor(() => $('voice-results').textContent.startsWith('1 voice'), 'Calm voice style failed');
     $('voice').value = 'recorded-fixture'; $('voice').dispatchEvent(new Event('change'));
     await waitFor(() => player.getSettings().voiceId === 'recorded-fixture', 'Original voice was not restored');
-    $('voice-style').value = ''; $('voice-style').dispatchEvent(new Event('change'));
-    await waitFor(() => $('voice-results').textContent.startsWith('3 voices'), 'Voice styles did not reset');
     $('settings-toggle').click();
-    pass('Multiple voices, gender/style filters, saved selection and audio preview work');
+    pass('Voice choices, saved selection and audio preview work without filters');
     const paragraph = prefix => [...document.querySelectorAll('article p')].find(p => p.textContent.startsWith(prefix));
     const forward = paragraph('On the corner'), backward = paragraph('The first thing');
     $('speed').value = '3'; $('speed').dispatchEvent(new Event('change'));
@@ -249,12 +304,14 @@ document.getElementById('local-tests').onclick = async () => {
     const win = reader.frame.contentWindow, player = win.testPlayer, engine = player.engine;
     const index = engine.segments.findIndex(s => s.text.startsWith('The first thing'));
     if (index < 0) throw new Error('Public test paragraph not found');
-    engine.segments = [engine.segments[index]];
+    const firstBlock = engine.segments[index].block;
+    engine.segments = engine.segments.filter(segment => segment.block === firstBlock);
     await engine.play();
     if (engine.state === 'error') throw new Error(engine.error);
     await waitFor(() => engine.audio.currentTime > .15 && CSS.highlights.has('article-voice-word'), 'Local narration or highlight did not start', 30000);
     pass('Real Qwen speech plays in Chrome; no Cartesia key');
-    const words = engine.segments[0].result.words;
+    await engine.fill(true);
+    const words = engine.segments.flatMap(segment => segment.result.words);
     if (!words.some(word => word.word.toLowerCase() === 'kettle' && word.from != null)) throw new Error('Actual word alignment is missing');
     pass(`${words.length} words aligned to the generated paragraph audio`);
     engine.pause(); const paused = engine.audio.currentTime;
@@ -264,10 +321,10 @@ document.getElementById('local-tests').onclick = async () => {
     const paragraph = [...document.querySelectorAll('article p')].find(p => p.textContent.startsWith('The first thing'));
     clickArticleWord(paragraph, 'kettle');
     await waitFor(() => engine.state === 'playing' && engine.lastWord === 'kettle', 'Click did not seek to the actual aligned word');
-    engine.pause(); pass(`Clicking kettle seeks to its measured spoken timestamp (${engine.audio.currentTime.toFixed(2)}s)`);
+    engine.pause(); pass(`Clicking kettle seeks to its measured time in its audio piece (${engine.audio.currentTime.toFixed(2)}s)`);
     clickArticleWord(paragraph, 'quiet');
     await waitFor(() => engine.state === 'playing' && engine.lastWord === 'quiet', 'Backward click did not seek');
-    engine.pause(); pass(`Clicking quiet jumps backward in the same recording (${engine.audio.currentTime.toFixed(2)}s)`);
+    engine.pause(); pass(`Clicking quiet jumps back to its earlier audio piece (${engine.audio.currentTime.toFixed(2)}s)`);
     win.document.getElementById('speed').value = '3'; win.document.getElementById('speed').dispatchEvent(new Event('change'));
     await engine.seek(.2);
     await engine.play();
@@ -287,29 +344,26 @@ document.getElementById('local-tests').onclick = async () => {
     engine.pause(); pass('Reopening the same paragraph uses persisted audio without regeneration');
     const referenceId = player.getSettings().voiceReferenceId;
     engine.load(article, player.getSettings());
-    engine.segments = article.passages.filter(segment => ['The first thing', 'We spend so much', 'There is a name'].some(prefix => segment.text.startsWith(prefix)));
-    if (engine.segments.length !== 3) throw new Error('Three public paragraphs were not found');
+    const paragraphBlocks = ['The first thing', 'We spend so much', 'There is a name'].map(prefix => article.passages.find(segment => segment.text.startsWith(prefix))?.block);
+    if (paragraphBlocks.some(block => block == null)) throw new Error('Three public paragraphs were not found');
+    engine.segments = article.passages.filter(segment => paragraphBlocks.includes(segment.block));
     await engine.prepareAll();
     if (engine.state === 'error') throw new Error(engine.error);
     if (!referenceId || engine.segments.some(segment => segment.result?.referenceId !== referenceId))
       throw new Error('Paragraphs did not use the same fixed voice reference');
     pass('Three real paragraphs use the exact same saved voice reference');
     await engine.play();
-    await waitFor(() => engine.index === 1 && engine.state === 'playing', 'Second paragraph did not start automatically', 30000);
+    await waitFor(() => engine.segments[engine.index]?.block === paragraphBlocks[1] && engine.state === 'playing', 'Second paragraph did not start automatically', 30000);
     await waitFor(() => CSS.highlights.get('article-voice-passage')?.values().next().value?.toString().startsWith('We spend'), 'Highlight did not follow the second paragraph');
-    await waitFor(() => engine.index === 2 && engine.state === 'playing', 'Third paragraph did not start automatically', 30000);
+    await waitFor(() => engine.segments[engine.index]?.block === paragraphBlocks[2] && engine.state === 'playing', 'Third paragraph did not start automatically', 30000);
     engine.pause(); pass('3× playback and page highlighting follow paragraph transitions');
     const $ = id => win.document.getElementById(id);
     $('settings-toggle').click();
     await waitFor(() => $('voice-results').textContent.startsWith('9 voices'), 'Local voice catalog did not load');
     pass('Nine local voice choices are available in Settings');
-    $('provider').value = 'cartesia'; $('provider').dispatchEvent(new Event('change'));
-    await waitFor(() => player.getSettings().provider === 'cartesia' && !$('cartesia-connection').hidden, 'Cloud provider did not display its own settings');
-    if (player.getSettings().apiKey) throw new Error('A local voice created a cloud API key');
-    $('provider').value = 'local'; $('provider').dispatchEvent(new Event('change'));
-    await waitFor(() => player.getSettings().provider === 'local' && player.getSettings().voiceId === 'Ryan'
-      && player.getSettings().voiceReferenceId === referenceId && $('voice-results').textContent.startsWith('9 voices'), 'Local voice selection was not restored');
-    pass('Switching providers preserves the local voice and needs no cloud key');
+    if ($('provider') || $('model') || $('voice-gender') || $('voice-style')) throw new Error('Obsolete voice/model controls remain');
+    if (player.getSettings().voiceReferenceId !== referenceId) throw new Error('Opening Settings changed the saved voice reference');
+    pass('Simple voice settings preserve the exact narrator reference');
     $('settings-toggle').click();
     engine.segments = [engine.segments.find(segment => segment.text.startsWith('The first thing'))];
     await engine.play(); engine.pause();

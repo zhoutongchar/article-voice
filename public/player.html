@@ -1,37 +1,39 @@
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Article Voice</title><link rel="stylesheet" href="player.css"></head>
-<body>
-<main id="player">
-  <header><div class="brand"><span class="wave" aria-hidden="true">▂▆▃▇▂</span> Article Voice <span class="provider">CARTESIA</span></div><button id="close" class="icon small" aria-label="Close player">×</button></header>
+<body data-layout="compact">
+<main id="player" aria-label="Article Voice player">
+<div class="playback">
+  <header><div class="brand"><span class="wave" aria-hidden="true">▂▆▃▇▂</span> Article Voice</div><div class="view-controls">
+    <div class="view-switcher" role="group" aria-label="Player view">
+      <button data-layout="minimal" aria-label="Minimal view" aria-pressed="false" title="Minimal view"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M3 8h14"/></svg></button>
+      <button data-layout="compact" aria-label="Compact view" aria-pressed="true" title="Compact view"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M3 5h14M3 11h14"/></svg></button>
+      <button data-layout="full" aria-label="Full view" aria-pressed="false" title="Full view with settings"><svg viewBox="0 0 20 16" aria-hidden="true"><rect x="2.5" y="2" width="15" height="12" rx="2"/><path d="M3 6h14M6 9h8M6 11.5h5"/></svg></button>
+    </div>
+    <button id="close" class="icon small" aria-label="Close player">×</button>
+  </div></header>
   <h1 id="title">Finding your article…</h1>
   <div class="meta"><span id="status" role="status">Ready when you are</span><span id="coverage"></span></div>
-  <div class="timeline"><input id="seek" type="range" min="0" max="1" step="0.05" value="0" aria-label="Audio position" disabled><div class="times"><span id="elapsed">0:00</span><span id="duration">Generate to see duration</span></div></div>
+  <div class="timeline"><input id="seek" type="range" min="0" max="1" step="0.05" value="0" aria-label="Audio position" disabled><div class="times"><span id="elapsed">0:00</span><span id="duration">Ready to listen</span></div></div>
   <div class="controls">
     <div class="transport"><button id="previous" class="icon" aria-label="Previous passage">↤</button><button id="play" class="play" aria-label="Play article"><span id="play-icon">▶</span></button><button id="next" class="icon" aria-label="Next passage">↦</button><button id="stop" class="icon" aria-label="Stop reading">■</button></div>
     <label class="speed"><span>Speed</span><select id="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option><option value="2.25">2.25×</option><option value="2.5">2.5×</option><option value="2.75">2.75×</option><option value="3">3×</option></select></label>
   </div>
-  <div class="bottom"><label class="check"><input id="follow" type="checkbox" checked> Follow words</label><button id="prepare" class="text-button">Generate all</button><button id="download" class="text-button" disabled>↓ WAV</button><button id="settings-toggle" class="text-button" aria-expanded="false" aria-controls="settings">Settings</button></div>
-  <p class="navigation-hint">Click a word in the article to listen from there.</p>
-  <p id="error" class="error" role="alert" hidden></p>
-  <section id="settings" hidden>
-    <div class="section-head"><strong>Your voice, your pace</strong><span>Pitch preserved up to 3×</span></div>
-    <label>Voice provider<select id="provider"><option value="cartesia">Cartesia · cloud</option><option value="local">Qwen3-TTS · on this Mac · no API charges</option></select></label>
-    <div id="cartesia-connection">
-    <label>Cartesia API key<div class="key-row"><input id="api-key" type="password" placeholder="Paste your API key" autocomplete="off" spellcheck="false"><button id="connect" class="button">Connect</button></div></label>
-    <p class="hint">Saved only on this device. Article text goes directly to Cartesia when you generate audio.</p>
-    </div>
-    <div id="local-connection" hidden><p class="hint">Each voice reuses one saved reference recording across paragraphs. Speech and word timing run on your Mac. Start the companion with <code>npm run local</code> in the Article Voice folder. No API key needed.</p><button id="connect-local" class="button secondary">Connect local server</button></div>
-    <div class="settings-grid voice-filters"><label>Voice type<select id="voice-gender"><option value="">All voice types</option><option value="feminine">Female</option><option value="masculine">Male</option><option value="gender_neutral">Neutral</option></select></label><label>Style<select id="voice-style"><option value="">All styles</option></select></label></div>
-    <div class="voice-search"><input id="voice-search" type="search" placeholder="Search voices…" aria-label="Search voices"><button id="search-voices" class="button secondary">Search</button></div>
-    <label>Voice<div class="key-row"><select id="voice" aria-label="Reading voice"><option value="">Connect to choose a voice</option></select><button id="more-voices" class="button secondary" hidden>More</button></div></label>
-    <p id="voice-description" class="hint">Browse by voice type, style or language.</p>
-    <div class="voice-actions"><span id="voice-results" role="status"></span><button id="preview-voice" class="button secondary" disabled>▶ Preview voice</button></div>
-    <div class="settings-grid"><label>Model<select id="model"><option value="sonic-3.6">Sonic 3.6</option><option value="sonic-3.5">Sonic 3.5</option><option value="sonic-3">Sonic 3</option></select></label><label>Language<select id="language"><option value="">Auto</option><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="pt">Português</option><option value="hi">हिन्दी</option><option value="it">Italiano</option><option value="ru">Русский</option></select></label></div>
-    <label>Start listening<select id="mode"><option value="stream">As passages are ready</option><option value="ahead">After the whole article is ready</option></select></label>
-    <div class="privacy-row"><span id="voice-name">No voice connected</span><button id="open-recording" class="text-button">Open saved WAV</button><button id="clear-cache" class="text-button">Clear cache</button><button id="forget-key" class="text-button">Forget key</button></div>
-    <input id="recording-file" type="file" accept="audio/wav,.wav" hidden>
-  </section>
+  <div class="bottom"><label class="check" title="Automatic scrolling pauses for 10 seconds after you scroll."><input id="follow" type="checkbox" checked> Follow words</label><span id="follow-status" role="status" hidden></span><button id="settings-toggle" class="text-button" aria-expanded="false" aria-controls="settings">Settings</button></div>
+</div>
+<p id="error" class="error" role="alert" hidden></p>
+<section id="settings" hidden>
+  <div class="section-head"><strong>Your voice, your pace</strong><span>Pitch preserved up to 3×</span></div>
+  <label>Voice<select id="voice" aria-label="Reading voice"><option value="">Loading voices…</option></select></label>
+  <p id="voice-description" class="hint"></p>
+  <div class="voice-actions"><span id="voice-results" role="status"></span><button id="preview-voice" class="button secondary" disabled>▶ Preview voice</button></div>
+  <label>Language<select id="language"><option value="">Auto</option><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="pt">Português</option><option value="hi">हिन्दी</option><option value="it">Italiano</option><option value="ru">Русский</option></select></label>
+  <label>Start listening<select id="mode"><option value="stream" selected>As passages are ready</option><option value="ahead">After the whole article is ready</option></select></label>
+  <p class="hint">Scroll freely while listening. Automatic scrolling resumes 10 seconds after your last scroll.</p>
+  <div class="saved-audio"><button id="open-recording" class="text-button">Open saved audio</button><button id="download" class="text-button" disabled>Save WAV</button><button id="clear-cache" class="text-button">Clear cache</button></div>
+  <button id="retry-voices" class="text-button" hidden>Retry loading voices</button>
+  <input id="recording-file" type="file" accept="audio/wav,.wav" hidden>
+</section>
 </main>
 <audio id="audio" preload="auto"></audio><script type="module" src="player.js"></script>
 </body></html>

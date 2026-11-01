@@ -45,7 +45,7 @@ export const audioCache = {
 
 export async function cacheKey(text, settings) {
   if (settings.provider === 'local' && !isReferenceId(settings.voiceReferenceId))
-    throw new Error('Connect the local server to load its fixed voice reference.');
+    throw new Error('Reconnect your voices in Settings to load the fixed voice reference.');
   const identity = settings.provider === 'local'
     ? ['local', LOCAL_CONFIG.pipeline, LOCAL_CONFIG.revision, LOCAL_CONFIG.alignerRevision, LOCAL_CONFIG.generation, settings.voiceReferenceId]
     : ['cartesia', '2026-08-14'];

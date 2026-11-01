@@ -1,6 +1,6 @@
 {
   "name": "article-voice",
-  "version": "0.2.3",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Read web articles with Cartesia or local Qwen3-TTS voices, word highlighting and pitch-preserving 3× playback.",
@@ -9,8 +9,12 @@
     "dev": "node scripts/dev-server.mjs",
     "local": ".venv/bin/python local/server.py",
     "local:setup": "uv venv --allow-existing --python 3.12 .venv && uv pip install --python .venv/bin/python -r local/requirements-lock.txt",
+    "mac:build": ".venv/bin/python macos/build_app.py",
+    "mac:check": "swift run --package-path macos ArticleVoiceCoreChecks",
+    "mac:smoke": "swift run --package-path macos ArticleVoiceSmoke",
     "test": "node --test tests/*.test.mjs",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "test:setup": ".venv/bin/python tests/chrome_setup_test.py"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0"

@@ -1,4 +1,5 @@
 import config from '../local/config.json' with { type: 'json' };
+import { hasNative, nativeRequest } from './native.js';
 
 export const LOCAL_CONFIG = config;
 export const isReferenceId = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -12,13 +13,13 @@ async function request(path, options, fetcher) {
   if (!response.ok) throw new Error(response.status === 409 ? 'The local voice reference changed. Connect the local server again in Settings.'
     : response.status === 429 ? 'Local reader is busy. Try again shortly.' : 'Local Qwen could not complete this request. Check its terminal.');
   const value = await response.json();
-  if (value.model !== config.model || value.revision !== config.revision || value.pipeline !== config.pipeline)
-    throw new Error('The local server and extension versions differ. Restart the server and reload Article Voice.');
   return value;
 }
 
 export async function localVoices(_key, { query = '', gender = '', language = '', signal } = {}, fetcher = fetch) {
-  const value = await request('/voices', { signal }, fetcher);
+  const value = hasNative() && fetcher === fetch
+    ? await nativeRequest('voices', undefined, signal) : await request('/voices', { signal }, fetcher);
+  validateIdentity(value);
   if (!Array.isArray(value.voices) || value.voices.some(voice => !isReferenceId(voice.referenceId)))
     throw new Error('Local voice references are not ready. Wait for the companion to finish starting.');
   // All nine speakers can read every supported language. Language metadata here
@@ -28,9 +29,12 @@ export async function localVoices(_key, { query = '', gender = '', language = ''
 }
 
 export async function localSynthesize(text, settings, signal, fetcher = fetch) {
-  if (!isReferenceId(settings.voiceReferenceId)) throw new Error('Connect the local server in Settings to load its fixed voice reference.');
-  const value = await request('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice: settings.voiceId, language: settings.language || '', referenceId: settings.voiceReferenceId }), signal }, fetcher);
+  if (!isReferenceId(settings.voiceReferenceId)) throw new Error('Reconnect your voices in Settings to load the fixed voice reference.');
+  const payload = { text, voice: settings.voiceId, language: settings.language || '', referenceId: settings.voiceReferenceId };
+  const value = hasNative() && fetcher === fetch
+    ? await nativeRequest('speech', payload, signal)
+    : await request('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal }, fetcher);
+  validateIdentity(value);
   if (value.referenceId !== settings.voiceReferenceId) throw new Error('Local Qwen returned a different voice reference. Reconnect the local server.');
   if (value.sampleRate !== 24000 || typeof value.pcm !== 'string' || value.pcm.length > 32 * 1024 * 1024
     || !Array.isArray(value.words) || !value.words.length) throw new Error('Local Qwen returned invalid audio or missing word alignment.');
@@ -43,4 +47,9 @@ export async function localSynthesize(text, settings, signal, fetcher = fetch) {
     previous = item.start;
   }
   return { pcm, duration, words: value.words, referenceId: value.referenceId };
+}
+
+function validateIdentity(value) {
+  if (value?.model !== config.model || value?.revision !== config.revision || value?.pipeline !== config.pipeline)
+    throw new Error('Update Article Voice and its Chrome extension to the same version.');
 }

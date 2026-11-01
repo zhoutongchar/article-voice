@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Article Voice · native source test</title>
+<style>
+  body { margin: 32px; max-width: 760px; color: #213b2d; background: #fbfaf6; font: 25px/1.7 Georgia, serif; }
+  h1 { font: 600 23px system-ui; } nav { display: flex; gap: 12px; margin: 20px 0; }
+  button { padding: 10px 14px; font: 14px system-ui; } #status { font: 14px system-ui; }
+  article:focus { outline: none; } textarea { width: 100%; height: 120px; font: 22px/1.5 Georgia; }
+</style>
+<h1>Public source-word and streaming check</h1>
+<nav><button id="select-article">Select article</button><button id="select-formatted">Select formatted sentence</button><button id="select-box">Select text box</button></nav>
+<p id="status">Choose a public passage, then use Article Voice.</p>
+<article id="reading" tabindex="-1">
+<p>A useful reader follows the actual sound. It marks the word being spoken, keeps the surrounding passage visible, and waits when you pause. The next sentence can be prepared while the first one is playing, so there is no need to wait for the whole paragraph.</p>
+<p id="formatted">A café beside a quiet street has <strong>warm windows</strong>, a small <a href="#last">reading corner</a>, and a place to sit. Words after inline formatting should keep their original positions.</p>
+<p id="last">You can click an earlier word to hear it again. At three times the usual pace, the pitch should stay familiar. A pause should hold the word in place, and a later audio piece should continue from the same media clock.</p>
+</article>
+<textarea aria-label="Public text box">A useful reader follows the actual sound. It marks the word being spoken and waits when you pause.</textarea>
+<script>
+  function select(element, message) {
+    document.querySelector('#reading').focus();
+    const range = document.createRange(); range.selectNodeContents(element);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    document.querySelector('#status').textContent = message;
+  }
+  document.querySelector('#select-article').onclick = () => select(document.querySelector('#reading'), 'Article selected.');
+  document.querySelector('#select-formatted').onclick = () => select(document.querySelector('#formatted'), 'Formatted sentence selected.');
+  document.querySelector('#select-box').onclick = () => {
+    const box = document.querySelector('textarea'); box.focus(); box.select();
+    document.querySelector('#status').textContent = 'Text box selected.';
+  };
+</script>

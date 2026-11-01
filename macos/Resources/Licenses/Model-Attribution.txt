@@ -1,0 +1,20 @@
+Article Voice uses Qwen3-TTS and Qwen3-ForcedAligner by Alibaba Cloud.
+Model weights are licensed under Apache License 2.0; see Qwen-Apache-2.0.txt.
+
+Qwen3-TTS: https://github.com/QwenLM/Qwen3-TTS
+Narrator: mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit
+  Revision: 37e955a1deb861c088ae5f3a67043185f3d1a60c
+Reference generator: mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-4bit
+  Revision: f35faf19b0cc2160865af64ecf0f22f83d335135
+Alignment: mlx-community/Qwen3-ForcedAligner-0.6B-8bit
+  Revision: 0e1a68e91d815300c7c9754b2a7639378b23db15
+
+The MLX Community conversions use quantized weights from the original Qwen models.
+The app's prepared voice-reference recordings use original public narration text
+and the Qwen CustomVoice presets. They were generated with the pinned configuration
+in local/config.json. No user article or personal voice recording is bundled.
+
+MLX-Audio 0.6.3 is licensed under MIT; see MLX-Audio-MIT.txt.
+Other bundled Python dependencies retain their distribution metadata and license
+files under Resources/PythonPackages. The Python standard library retains its
+provided license files under Resources/Python.

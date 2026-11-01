@@ -4,12 +4,12 @@ export const bridge = {
     if (!response?.ok) throw new Error(response?.error || 'The article is no longer available.');
     return response.value;
   },
-  async settings() { return chrome.storage.local.get(['provider', 'providerProfiles', 'apiKey', 'voiceId', 'voiceName', 'voiceLibrary', 'model', 'language', 'speed', 'mode', 'follow']); },
+  async settings() { return chrome.storage.local.get(['provider', 'providerProfiles', 'apiKey', 'voiceId', 'voiceName', 'voiceLibrary', 'language', 'speed', 'mode', 'follow', 'layout']); },
   async save(value) { await chrome.storage.local.set(value); },
   async subscribe(callback) {
     const { tabId } = await this.request({ type: 'identify' });
     const listener = (message, sender) => {
-      if (sender.id === chrome.runtime.id && message?.type === 'seek-word' && message.tabId === tabId) callback(message);
+      if (sender.id === chrome.runtime.id && ['seek-word', 'follow-state'].includes(message?.type) && message.tabId === tabId) callback(message);
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);

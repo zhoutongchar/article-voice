@@ -11,10 +11,23 @@ CONFIG = json.loads(Path(__file__).with_name("config.json").read_text())
 
 
 class SpeechRuntime:
-    def __init__(self):
+    def __init__(self, data_directory=None, models_directory=None):
         self.tts = self.aligner = None
-        self.references = ReferenceLibrary(CONFIG, Path(__file__).resolve().parents[1] / ".cache" / "voice-references")
+        directory = Path(data_directory) if data_directory else Path(__file__).resolve().parents[1] / ".cache"
+        self.references = ReferenceLibrary(CONFIG, directory / "voice-references")
         self.reference_audio = {}
+        self.models_directory = Path(models_directory) if models_directory else None
+
+    @property
+    def ready(self):
+        return self.tts is not None and self.aligner is not None
+
+    def catalog(self):
+        return self.references.catalog()
+
+    def reference_identity(self, voice):
+        reference = self.references.voices.get(voice)
+        return reference.identity if reference else None
 
     def load(self):
         from huggingface_hub import snapshot_download
@@ -24,6 +37,8 @@ class SpeechRuntime:
         import mlx.core as mx
         import numpy as np
         def model_path(repo, revision):
+            if self.models_directory and repo in (CONFIG["model"], CONFIG["aligner"]):
+                return str(self.models_directory / ("narrator" if repo == CONFIG["model"] else "aligner"))
             try:
                 return snapshot_download(repo, revision=revision, local_files_only=True)
             except LocalEntryNotFoundError:

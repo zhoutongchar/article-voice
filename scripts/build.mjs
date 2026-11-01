@@ -1,15 +1,20 @@
 import { build } from 'esbuild';
 import { mkdir, cp, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+const connection = JSON.parse(await readFile('chrome/connection.json', 'utf8'));
+const { version } = JSON.parse(await readFile('package.json', 'utf8'));
 await mkdir('dist', { recursive: true });
 await cp('public', 'dist', { recursive: true });
 await build({ entryPoints: ['src/content.js', 'src/background.js'], bundle: true, format: 'iife', outdir: 'dist', target: 'chrome120' });
-await build({ entryPoints: ['src/player.js'], bundle: true, format: 'esm', outdir: 'dist', target: 'chrome120' });
+await build({ entryPoints: ['src/player.js', 'src/welcome.js'], bundle: true, format: 'esm', outdir: 'dist', target: 'chrome120' });
 await writeFile('dist/manifest.json', JSON.stringify({
-  manifest_version: 3, name: 'Article Voice · AI Reader', version: '0.2.3', minimum_chrome_version: '120',
+  manifest_version: 3, name: 'Article Voice', version, minimum_chrome_version: '120',
+  key: connection.extensionKey,
   description: 'Listen with Cartesia or local Qwen3-TTS voices, word highlighting, auto-scroll and pitch-preserving playback up to 3×.',
-  permissions: ['activeTab', 'scripting', 'storage'], host_permissions: ['https://api.cartesia.ai/*', 'http://127.0.0.1/*'],
+  permissions: ['activeTab', 'scripting', 'storage', 'nativeMessaging', 'alarms'], host_permissions: ['https://api.cartesia.ai/*', 'http://127.0.0.1/*'],
   action: { default_title: 'Read this article with Article Voice' },
+  commands: { _execute_action: { suggested_key: { default: 'Ctrl+Shift+S', mac: 'Command+Shift+S' }, description: 'Read this article' } },
   icons: { 16: 'icon16.png', 48: 'icon48.png', 128: 'icon128.png' },
   background: { service_worker: 'background.js' },
   web_accessible_resources: [{ resources: ['player.html', 'player.js', 'player.css'], matches: ['http://*/*', 'https://*/*'] }],

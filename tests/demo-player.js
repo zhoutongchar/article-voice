@@ -1,6 +1,8 @@
 import { startPlayer } from '../src/player.js';
 import { synthesize, listVoices } from '../src/cartesia.js';
-import { LOCAL_CONFIG } from '../src/local.js';
+import { LOCAL_CONFIG, localSynthesize, localVoices } from '../src/local.js';
+const managedApp = new URL(location.href).searchParams.has('app');
+const appFetch = (url, options) => fetch(String(url).replace('127.0.0.1:4318', '127.0.0.1:4324'), options);
 const live = new URL(location.href).searchParams.has('live');
 const local = new URL(location.href).searchParams.has('local');
 const config = live ? await (await fetch('/test/config')).json() : null;
@@ -16,7 +18,7 @@ const fixtureVoices = [
   { id: 'recorded-daniel', name: 'Daniel (recorded test)', gender: 'masculine', language: 'en', description: 'Expressive, conversational narration. Recorded test voice, not Cartesia.', accents: [{ accent: 'british', is_native: true }] },
   { id: 'recorded-karen', name: 'Karen (recorded test)', gender: 'feminine', language: 'en', description: 'Warm, conversational voice. Recorded test voice, not Cartesia.', accents: [{ accent: 'australian', is_native: true }] }
 ];
-let settings = { apiKey: 'recorded-fixture', voiceId: 'recorded-fixture', voiceName: fixtureVoices[0].name, voiceLibrary: fixtureVoices, model: 'sonic-3.6', speed: 1, follow: true, mode: 'stream' };
+let settings = { provider: 'cartesia', apiKey: 'recorded-fixture', voiceId: 'recorded-fixture', voiceName: fixtureVoices[0].name, voiceLibrary: fixtureVoices, model: 'sonic-3.6', speed: 1, follow: true, mode: 'stream' };
 if (live) settings = { ...settings, apiKey: 'live-test-proxy', voiceId: config.voiceId, voiceName: 'Live Cartesia' };
 if (local) settings = { provider: 'local', apiKey: '', voiceId: 'Ryan', voiceName: 'Ryan · local Qwen',
   voiceLibrary: LOCAL_CONFIG.voices, model: LOCAL_CONFIG.model, speed: 1, follow: true, mode: 'stream' };
@@ -57,15 +59,6 @@ const fixtureVoiceList = async (_key, { query = '', gender = '', language = '' }
   voices: fixtureVoices.filter(v => (!gender || v.gender === gender) && (!language || v.language === language)
     && query.toLowerCase().split(/\s+/).every(term => `${v.name} ${v.description}`.toLowerCase().includes(term))), cursor: null
 });
-window.testPlayer = await startPlayer({ transport, generate: local ? undefined : live ? liveGenerate : fixtureGenerate,
-  loadVoices: local ? undefined : live ? (key, options) => listVoices(key, options, (url, request) => fetch(`/test/live-voices${url.search}`, { signal: request.signal })) : fixtureVoiceList });
-// Test mode cannot validate or use an entered key. Keep it explicitly labeled
-// and disable credential entry instead of presenting a fake Connect flow.
-document.getElementById('api-key').disabled = true;
-document.getElementById('api-key').placeholder = local ? 'Local Qwen needs no key' : live ? 'Key supplied by local test server' : 'Recorded demo · no API key needed';
-document.getElementById('connect').hidden = true;
-document.getElementById('provider').disabled = !local;
-if (!live && !local) {
-  document.querySelector('.provider').textContent = 'RECORDED DEMO';
-  document.querySelector('#settings .hint').textContent = 'Three recorded sample voices. Audio repeats a test clip; it is not article narration. Choose Test local Qwen for real reading on this Mac.';
-}
+window.testPlayer = await startPlayer({ transport, generate: local ? managedApp ? (text, settings, signal) => localSynthesize(text, settings, signal, appFetch) : undefined : live ? liveGenerate : fixtureGenerate,
+  loadVoices: local ? managedApp ? (key, options) => localVoices(key, options, appFetch) : undefined : live ? (key, options) => listVoices(key, options, (url, request) => fetch(`/test/live-voices${url.search}`, { signal: request.signal })) : fixtureVoiceList });
+if (!live && !local) document.getElementById('voice-description').textContent = 'Recorded browser test voices. This fixture repeats sample audio; use the local reader for real narration.';
