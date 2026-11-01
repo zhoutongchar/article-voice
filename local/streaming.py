@@ -1,10 +1,32 @@
 """Aligned paragraphs, with exact source offsets and no guessed timings."""
 import json
 import re
+from pathlib import Path
 from urllib.request import ProxyHandler, Request, build_opener
 from runtime import CONFIG
 
 PROTOCOL = "aligned-paragraphs-v1"
+POLICY = json.loads(Path(__file__).with_name('speech-policy.json').read_text())
+ABBREVIATION = re.compile(r"\b(?:" + '|'.join(re.escape(value) for value in POLICY['abbreviations']) + r"|[^\W\d_])\.$", re.I)
+
+
+def sentence_pieces(text):
+    ends = []
+    if len(text.encode('utf-16-le')) // 2 > POLICY['paragraphCharacters']:
+        for match in re.finditer(r"[.!?。！？]+[”’\"')\]]*", text):
+            end = match.end()
+            if end < len(text) and not text[end].isspace() and not re.search('[。！？]', match[0]): continue
+            prefix = re.sub(r"[”’\"')\]]+$", '', text[:end])
+            if prefix.endswith('.') and ABBREVIATION.search(prefix): continue
+            ends.append(end)
+    if not ends or ends[-1] != len(text): ends.append(len(text))
+    start = previous = 0
+    for end in ends:
+        if len(text[start:end].encode('utf-16-le')) // 2 > POLICY['paragraphCharacters'] and previous > start:
+            yield text[start:previous], start
+            start = previous
+        previous = end
+    yield text[start:], start
 
 
 def pieces(text):
@@ -15,7 +37,9 @@ def pieces(text):
         value = raw.strip()
         if value:
             start = cursor + len(raw) - len(raw.lstrip())
-            yield value, len(text[:start].encode("utf-16-le")) // 2
+            for part, offset in sentence_pieces(value):
+                part_start = start + offset + len(part) - len(part.lstrip())
+                if part.strip(): yield part.strip(), len(text[:part_start].encode("utf-16-le")) // 2
         cursor = boundary.end() if boundary else len(text)
 
 

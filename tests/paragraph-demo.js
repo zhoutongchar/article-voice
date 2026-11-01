@@ -1,6 +1,12 @@
 import { mountReader } from '../src/content.js';
 const output = document.getElementById('result');
 let reader;
+const long = new URL(location.href).searchParams.has('long');
+if (long) {
+  const paragraph = document.getElementById('paragraph');
+  paragraph.textContent = [paragraph.textContent, paragraph.textContent, paragraph.textContent].join(' ');
+  document.querySelector('h1').textContent = 'Long paragraphs, complete sentences';
+}
 const wait = async (predicate, message) => {
   const end = performance.now() + 120_000;
   while (performance.now() < end) {
@@ -15,7 +21,7 @@ document.getElementById('run').onclick = async event => {
   event.target.disabled = true;
   const results = [], pass = text => { results.push(`PASS · ${text}`); output.textContent = results.join('\n'); };
   try {
-    reader = mountReader({ openFrame: '/player.html?local=1&app=1&fresh=1&port=4326',
+    reader = mountReader({ openFrame: '/player.html?local=1&app=1&fresh=1',
       sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
       onRequest(handle, frame) {
         const listener = async event => {
@@ -28,6 +34,29 @@ document.getElementById('run').onclick = async event => {
     await wait(() => reader.frame.contentWindow.testPlayer?.engine.segments.length, 'Reader did not initialize');
     const win = reader.frame.contentWindow, { engine, session } = win.testPlayer;
     const expected = document.getElementById('paragraph').textContent;
+    if (long) {
+      const block = engine.article.blocks.indexOf(expected);
+      const pieces = engine.segments.filter(segment => segment.block === block);
+      if (pieces.length < 2 || pieces.map(piece => piece.text).join(' ') !== expected) throw new Error('Long paragraph lost text or did not split');
+      if (pieces.some(piece => !piece.text.endsWith('.'))) throw new Error('A request ended inside a sentence');
+      pass(`The ${expected.length}-character paragraph splits into ${pieces.length} complete-sentence requests (${pieces.map(piece => piece.text.length).join(', ')} characters)`);
+      const index = engine.segments.indexOf(pieces[0]);
+      await engine.go(index); await session.play(); await engine.fill(true);
+      const last = pieces[0].result.words.filter(word => word.from != null).at(-1);
+      await session.seekWord({ block, start: pieces[0].offset + last.from, end: pieces[0].offset + last.to });
+      await wait(() => engine.index === index + 1 && engine.state === 'playing', 'Audio did not advance at the sentence boundary');
+      await wait(() => CSS.highlights.has('article-voice-word'), 'Following sentence lost its source highlight');
+      const word = pieces[1].result.words.find(word => word.from != null);
+      await session.seekWord({ block, start: pieces[1].offset + word.from, end: pieces[1].offset + word.to });
+      if (Math.abs(engine.audio.currentTime - word.start) > .3) throw new Error('Word seeking lost the second piece offset');
+      const calls = win.localCalls.filter(call => pieces.some(piece => piece.text === call.text));
+      if (calls.length !== pieces.length) throw new Error('Speech requests were repeated or dropped');
+      pass('Real Qwen playback advances at the complete-sentence boundary with prepared audio');
+      pass('Source highlights and word seeking retain their offsets in the later speech piece');
+      pass(`Actual speech durations: ${pieces.map(piece => piece.result.duration.toFixed(1) + 's').join(', ')}`);
+      session.pause(); document.body.dataset.paragraphCheck = 'passed'; pass('LONG PARAGRAPH CHECK PASSED');
+      return;
+    }
     const index = engine.segments.findIndex(segment => segment.text === expected);
     if (index < 0 || expected.length < 480) throw new Error('The paragraph was split before speech');
     pass(`The ${expected.length}-character HTML paragraph is one speech request, including every sentence`);

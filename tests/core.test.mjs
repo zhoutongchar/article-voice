@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readSSE, pcmWav, synthesize, listVoices, API_VERSION } from '../src/cartesia.js';
 import { alignWords, wordAtPosition } from '../src/alignment.js';
-import { paragraphPassages } from '../src/article.js';
+import { paragraphPassages, sentencePassages, PARAGRAPH_CHARACTERS } from '../src/article.js';
 import { cacheKey } from '../src/cache.js';
 import { readRecording } from '../src/recording.js';
 import { parseVoice } from '../src/voices.js';
@@ -40,15 +40,35 @@ test('source offsets remain UTF-16 coordinates for emoji and letters outside the
   assert.deepEqual(aligned.map(word => text.slice(word.from, word.to)), ['𐐀', 'hello']);
 });
 
-test('paragraph requests preserve UTF-16 offsets without sentence or character cutoffs', () => {
+test('long paragraphs split at sentence endings while preserving UTF-16 source offsets', () => {
   const text = '  First sentence. ' + 'A long linked sentence 😀 with some words. '.repeat(90) + '\nA visual line wrap stays here.\n\n A separate paragraph. ';
   const passages = paragraphPassages([{ text }, { text: '中文没有空格。也需要保持整个段落。' }]);
-  assert.equal(passages.length, 3);
-  assert.ok(passages[0].text.length > 2500);
-  assert.ok(passages[0].text.endsWith('A visual line wrap stays here.'));
+  assert.ok(passages.length > 3);
+  assert.ok(passages.some(piece => piece.text.endsWith('A visual line wrap stays here.')));
+  assert.ok(passages.every(piece => piece.text.length <= PARAGRAPH_CHARACTERS && /[.。]$/.test(piece.text)));
+  assert.ok(paragraphPassages([{ text }], { splitLong: false })[0].text.length > 2500);
   for (const item of passages) {
     const original = item.block === 0 ? text : '中文没有空格。也需要保持整个段落。';
     assert.equal(original.slice(item.offset, item.offset + item.text.length), item.text);
+  }
+});
+
+test('long-paragraph fallback never separates titles, decimals or a single overlong sentence', () => {
+  const prefix = 'x'.repeat(1490) + '. ';
+  const text = prefix + 'Dr. Mira kept the rate at 3.50%. Another complete sentence follows.';
+  const pieces = sentencePassages(text);
+  assert.deepEqual(pieces.map(piece => piece.text), [prefix.trim(), 'Dr. Mira kept the rate at 3.50%. Another complete sentence follows.']);
+  const oneSentence = 'A sentence with many words ' + 'and more words '.repeat(130) + 'finally ends.';
+  assert.deepEqual(sentencePassages(oneSentence), [{ text: oneSentence, offset: 0 }]);
+  const normal = 'An ordinary paragraph. Its sentences stay together.';
+  assert.deepEqual(sentencePassages(normal), [{ text: normal, offset: 0 }]);
+  const cjk = '😀第一句保持完整。第二句也应完整！'.repeat(120);
+  const chinese = sentencePassages(cjk);
+  assert.ok(chinese.length > 1);
+  for (const piece of chinese) {
+    assert.equal(cjk.slice(piece.offset, piece.offset + piece.text.length), piece.text);
+    assert.match(piece.text, /[。！]$/u);
+    assert.ok(piece.text.length <= PARAGRAPH_CHARACTERS);
   }
 });
 

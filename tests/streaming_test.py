@@ -93,6 +93,22 @@ class StreamingTests(unittest.TestCase):
             previous = offset + length
         self.assertFalse(source[previous * 2:].decode("utf-16-le").strip())
 
+    def test_long_paragraphs_split_at_sentences_without_cutting_abbreviations_or_decimals(self):
+        prefix = 'x' * 1490 + '. '
+        text = prefix + 'Dr. Mira kept the rate at 3.50%. Another complete sentence follows.'
+        result = list(pieces(text))
+        self.assertEqual([value for value, _ in result], [prefix.strip(), 'Dr. Mira kept the rate at 3.50%. Another complete sentence follows.'])
+        single = 'A sentence with many words ' + 'and more words ' * 130 + 'finally ends.'
+        self.assertEqual(list(pieces(single)), [(single, 0)])
+        chinese = '😀第一句保持完整。第二句也应完整！' * 120
+        result = list(pieces(chinese)); source = chinese.encode('utf-16-le')
+        self.assertGreater(len(result), 1)
+        for value, offset in result:
+            size = len(value.encode('utf-16-le')) // 2
+            self.assertLessEqual(size, 1500)
+            self.assertEqual(source[offset * 2:(offset + size) * 2].decode('utf-16-le'), value)
+            self.assertIn(value[-1], '。！')
+
 
 if __name__ == "__main__":
     unittest.main()

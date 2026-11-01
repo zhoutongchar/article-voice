@@ -21,10 +21,17 @@ requests. An unfinished page tail includes the next page's entire first
 paragraph, including subsequent sentences, before synthesis. Original OCR
 fragments remain available for highlighting and word seeking.
 
-The first full paragraph must finish synthesis and alignment before playback.
+Starting with 0.7.3, paragraphs longer than 1,500 UTF-16 characters are grouped
+into complete sentences near that soft target. Ordinary paragraphs remain one
+request. Decimal points and common abbreviations do not create boundaries;
+Chinese sentence punctuation is supported. A single sentence longer than the
+target remains intact. OCR applies this fallback to prepared text after the
+full-window LLM, retaining source mappings for every piece.
+
+The first speech piece must finish synthesis and alignment before playback.
 Later paragraphs are prepared ahead. Requests accept up to 12,000 UTF-16 units;
 a separate 4,096-codec-token audio limit rejects an unfinished generation before
-any audio is returned. Paragraphs are never silently cut to fit either limit.
+any audio is returned. Sentences are never silently cut to fit either limit.
 OCR paragraph grouping and continuation detection still depend on page layout
 and recognized punctuation; this is not perfect paragraph reconstruction for
 every book.
@@ -160,3 +167,14 @@ timestamps. That request took 9.14 seconds, including 1.07 seconds of formatting
 7.71 seconds of speech generation and 0.15 seconds of alignment. The app and
 bundled extension were installed and code-signature verification passed; Chrome
 still requires the user's Reload to activate the installed extension update.
+
+The 0.7.3 browser check used real local Qwen and forced alignment on a
+1,775-character HTML paragraph. It formed two complete-sentence requests of
+1,183 and 591 characters, played across their boundary with the next audio
+prepared, and retained source highlighting and word seeking in the later
+piece. The generated clips were 69.0 and 34.3 seconds long. JavaScript checks
+passed 67 tests and Python checks passed 38 tests, including full-window OCR
+preparation before fallback splitting, UTF-16 offsets, CJK punctuation,
+abbreviations, decimals, and preserving a single overlong sentence. The 0.7.3
+app, extension and shared sentence policy were installed and signature
+verification passed. The installed extension still needs the user's Reload.

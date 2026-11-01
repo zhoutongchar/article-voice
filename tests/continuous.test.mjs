@@ -183,3 +183,22 @@ test('an LLM-inserted blank line cannot cut a source paragraph into separate aud
   assert.deepEqual(prepared.passages.map(piece => piece.text), ['First sentence.\n\nSecond sentence ends.', second]);
   assert.equal(prepared.passages[1].sourceRanges[0].block, 1);
 });
+
+
+test('long OCR paragraphs split only after full-window preparation and retain late-word seeking', async () => {
+  const text = '😀 A re-\nmarkable place. ' + 'A complete sentence stays in the same paragraph. '.repeat(60) + 'The finalword ends it.';
+  const inputs = [], spoken = [], marks = [];
+  const engine = new ReaderEngine({ audio: new AudioFixture(), cache, onHighlight: value => marks.push(value),
+    prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, async text => { inputs.push(text); return formatted(text); }),
+    generate: async (text, settings) => {
+      spoken.push(text); const selection = settings.preparation;
+      assert.equal(formatted(selection.original).text.slice(selection.start, selection.end), text);
+      return clip(text);
+    } });
+  engine.load(unit('page', [text]), settings); await engine.play(); await engine.fill(true);
+  assert.deepEqual(inputs, [text]); assert.ok(spoken.length > 1);
+  assert.equal(spoken.join(' '), formatted(text).text); assert.ok(spoken.every(piece => piece.endsWith('.')));
+  const start = text.indexOf('finalword'); await engine.seekWord({ block: 0, start, end: start + 9 });
+  assert.ok(engine.index > 0); assert.equal(marks.at(-1).word, 'finalword'); assert.equal(marks.at(-1).start, start);
+  engine.stop();
+});

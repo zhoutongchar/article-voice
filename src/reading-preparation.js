@@ -1,4 +1,4 @@
-import { paragraphPassages } from './article.js';
+import { paragraphPassages, sentencePassages } from './article.js';
 import { preparedTextProjection } from './prepared-text.js';
 import { localPrepareText } from './local.js';
 import { alignWords } from './alignment.js';
@@ -29,15 +29,18 @@ export async function prepareReadingUnit(unit, settings, signal, prepare = local
   // Project SOURCE paragraph boundaries through the LLM's mapping. Neither
   // a flattened blank line nor a new line inserted by the model may split or
   // merge speech requests. Page-continuation fragments share one paragraph.
-  const passages = paragraphPassages([{ text: original }]).map(paragraph => {
+  const passages = paragraphPassages([{ text: original }], { splitLong: false }).flatMap(paragraph => {
     const prepared = projection.prepared(paragraph.offset, paragraph.offset + paragraph.text.length);
     if (!prepared) throw new Error('A prepared paragraph lost its source text.');
     const raw = record.text.slice(prepared.start, prepared.end), text = raw.trim();
-    const piece = { text, offset: prepared.start + raw.indexOf(text) };
-    const sourceRanges = ranges(piece.offset, piece.offset + piece.text.length);
-    return { text: piece.text, preparedOffset: piece.offset, sourceRanges,
-      block: sourceRanges[0]?.block ?? 0, offset: sourceRanges[0]?.start ?? 0,
-      preparation: { id: record.id, original: record.original, start: piece.offset, end: piece.offset + piece.text.length } };
+    const offset = prepared.start + raw.indexOf(text);
+    return sentencePassages(text).map(part => {
+      const piece = { text: part.text, offset: offset + part.offset };
+      const sourceRanges = ranges(piece.offset, piece.offset + piece.text.length);
+      return { text: piece.text, preparedOffset: piece.offset, sourceRanges,
+        block: sourceRanges[0]?.block ?? 0, offset: sourceRanges[0]?.start ?? 0,
+        preparation: { id: record.id, original: record.original, start: piece.offset, end: piece.offset + piece.text.length } };
+    });
   });
   return { ...unit, passages, preparation: record,
     align: (segment, words) => alignWords(segment.text, words).map(word => {
