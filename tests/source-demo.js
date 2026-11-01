@@ -10,7 +10,9 @@ const pages = [
 ];
 let index = 0, reader, adapter;
 const output = document.getElementById('result');
+let labelTimer;
 async function render() {
+  clearTimeout(labelTimer);
   const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1000;
   const ctx = canvas.getContext('2d'); ctx.fillStyle = '#faf9f5'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#172f24'; ctx.font = '48px Georgia';
@@ -30,7 +32,13 @@ async function render() {
   // The production Kindle renderer revokes decoded image URLs immediately.
   URL.revokeObjectURL(image.src);
   if (previous.startsWith('blob:')) URL.revokeObjectURL(previous);
-  const location = document.getElementById('kr-scrubber-bar'); location.textContent = `Page ${index + 1}`; location.setAttribute('aria-label', `Page ${index + 1}`);
+  const location = document.getElementById('kr-scrubber-bar'); location.textContent = `Page ${index + 1}`;
+  // Kindle's optional location label can disappear or lag the image. Keep it
+  // absent through capture, then recreate it before the next navigation.
+  if (index % 2) {
+    location.removeAttribute('aria-label');
+    labelTimer = setTimeout(() => location.setAttribute('aria-label', `Page ${index + 1}`), 250);
+  } else location.setAttribute('aria-label', `Page ${index + 1}`);
   document.getElementById('kr-chevron-left').disabled = index === 0;
   document.getElementById('kr-chevron-right').disabled = index === pages.length - 1;
   document.body.dataset.page = String(index);
@@ -69,13 +77,19 @@ document.getElementById('run-checks').onclick = async event => {
   event.target.disabled = true;
   const messages = [], pass = text => { messages.push(`PASS · ${text}`); output.textContent = messages.join('\n'); };
   try {
+    clearTimeout(labelTimer);
+    document.getElementById('kr-scrubber-bar').removeAttribute('aria-label');
     await openReader();
     await wait(() => reader.frame.contentWindow.testPlayer?.engine.segments.length, 'Initial OCR did not finish');
     const win = reader.frame.contentWindow, player = win.testPlayer, $ = id => win.document.getElementById(id);
     if (!player.engine.article.blocks.join(' ').includes('A quiet room waits')) throw new Error('Real Vision OCR did not return the book text');
+    document.getElementById('kr-scrubber-bar').setAttribute('aria-label', `Page ${index + 1}`);
     pass('Kindle adapter reads an image through actual Apple Vision OCR');
     $('speed').value = '3'; $('speed').dispatchEvent(new Event('change')); $('play').click();
-    await wait(() => player.engine.state === 'playing', 'Playback did not start');
+    await wait(() => {
+      if (player.session.unavailable) throw new Error($('error').textContent);
+      return player.engine.state === 'playing';
+    }, 'Playback did not start');
     await wait(() => document.querySelector('#article-voice-marks > div:last-child')?.childElementCount > 0, 'First word mark did not appear');
     // These deliberately short fixture pages can finish before two future
     // pages generate. Hold the first page to inspect the prepared queue, then
@@ -84,7 +98,7 @@ document.getElementById('run-checks').onclick = async event => {
     await wait(() => player.session.future.size === 2 && [...player.session.future.values()].every(record => record.ready), 'Two future pages were not prepared');
     await wait(() => !player.session.pending, 'Page preparation did not settle');
     if (index !== 0 || document.querySelector('[data-article-voice-page]') || document.getElementById('main-content').inert) throw new Error('Prefetch did not restore the visible page');
-    pass('Two pages of text and speech queue ahead; the original page is restored');
+    pass('Two pages of text and speech queue ahead; restoration survives missing/delayed location labels');
     await wait(() => document.querySelector('#article-voice-marks > div:last-child')?.childElementCount > 0, 'OCR word overlay is missing');
     if (!$('follow').checked) throw new Error('Follow words is not available');
     pass('Spoken words are marked over the image; Follow words remains available');

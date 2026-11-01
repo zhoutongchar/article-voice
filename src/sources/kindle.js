@@ -31,7 +31,9 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
       let binary = ''; for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
       const rect = image.getBoundingClientRect();
       const label = doc.querySelector('#kr-scrubber-bar')?.getAttribute('aria-label') || '';
-      return { id: `${url.searchParams.get('asin')}:${label}:${digest}`, image: btoa(binary), imageMime: blob.type.startsWith('image/') ? blob.type : 'image/png', imageUrl: image.currentSrc,
+      // Kindle hides/recreates its location control and updates it separately
+      // from the rendered image. It is display metadata, not page identity.
+      return { id: `${url.searchParams.get('asin')}:${digest}`, image: btoa(binary), imageMime: blob.type.startsWith('image/') ? blob.type : 'image/png',
         rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
         title: doc.querySelector('.top-chrome__book-title')?.textContent || doc.title,
         url: url.href, language: doc.documentElement.lang?.split('-')[0] || 'en', label };

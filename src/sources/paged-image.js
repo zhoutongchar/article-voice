@@ -42,9 +42,9 @@ export function createPagedImageSource({ id, access, recognize }) {
     try {
       await move(current);
       if (units[current] && (await access.capture()).id !== units[current].id) throw new Error('Position mismatch');
-    } catch {
+    } catch (cause) {
       invalid = true;
-      throw new Error(`Could not return to ${units[current]?.label || 'your reading position'}. Reading stopped. Close the player and use the book’s navigation.`);
+      throw new Error(`Could not return to ${units[current]?.label || 'your reading position'}. Reading stopped. Close the player and use the book’s navigation.`, { cause });
     } finally { access.uncover(); }
   }
   const source = {

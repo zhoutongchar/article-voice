@@ -39,6 +39,8 @@ An adapter is asked to present the next unit only after the current audio comple
 - **Article:** the existing Mozilla Readability extractor, DOM ranges, and original-page word seeking now live behind the article adapter. Wikipedia can already use this fallback. It has one unit and does not paginate.
 - **Kindle:** reads the current rendered page image, recognizes it locally through the bundled Apple Vision helper, orders columns, and maps word positions back onto the image. It uses normal page controls to visit up to two future pages, holds the current image over the book during preparation, and returns to the displayed position before resolving. It does not depend on Kindle’s private cache or Copy service. The controls remain accessible through the Article Voice player during preparation. If the source cannot confirm its position, reading stops with an explicit recovery message and Kindle controls are released.
 
+Kindle unit identity combines the book ID and captured image digest. The optional location label is display metadata: Kindle can hide or update it independently of the image, so it must not participate in position verification.
+
 The Kindle prefetch mechanism temporarily visits upcoming pages, so Amazon may record those pages as visited. Restoration returns the visible page; it does not promise to undo Kindle’s reading-history synchronization. Resizing or changing Kindle layout invalidates page geometry and requires reopening the reader.
 
 ## Adding another source
@@ -52,3 +54,5 @@ Avoid declaring prefetch support until the adapter can prepare units while resto
 Run `npm run check`, the Python boundary suite, and `npm run mac:check`. Build the OCR executable with `swift build --package-path macos -c release --product ArticleVoiceOCR`.
 
 Run `npm run dev`, open `http://127.0.0.1:4317/tests/source.html`, and choose **Run adapter checks**. This uses the production Kindle adapter, actual Apple Vision OCR, and explicitly labelled recorded speech. It checks queued units, source restoration, word marks, 3×, page completion, pause, stop, and cleanup. Add `?local=1` to use real Qwen through the app-managed engine. This fixture is not the Amazon website and does not establish live Kindle compatibility.
+
+The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. This reproduces the optional-control boundary while also revoking decoded image URLs as Kindle does.
