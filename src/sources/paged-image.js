@@ -50,7 +50,7 @@ export function createPagedImageSource({ id, access, recognize }) {
   const source = {
     id, capabilities: { format: 'ocr', pagination: true, prefetch: true, scroll: false },
     has: key => units.some(unit => unit.id === key),
-    current: () => units[current],
+    current: () => units[current] || null,
     invalidate() { invalid = true; generation++; active?.abort(); },
     open: () => work(async signal => {
       let image = await access.capture(signal);

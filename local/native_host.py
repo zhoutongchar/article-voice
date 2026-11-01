@@ -32,7 +32,8 @@ def receive(stream):
     if not isinstance(value, dict):
         raise ValueError("Invalid reader request")
     text_request = value.get('method') in ('prepare', 'speech')
-    if value.get('method') != 'ocr' and length > (96000 if text_request else 32000):
+    pipeline_request = value.get('method') in ('format', 'synthesize', 'align')
+    if value.get('method') != 'ocr' and length > (1024 * 1024 if pipeline_request else 96000 if text_request else 32000):
         raise ValueError("Choose a shorter reading.")
     return value
 
@@ -80,7 +81,7 @@ def run(origin, source=None, emit=send):
         raise ValueError("Connect the official Article Voice extension.")
     request = receive(source or sys.stdin.buffer)
     method = request.get("method")
-    if method not in ("heartbeat", "status", "voices", "speech", "ocr", "prepare"):
+    if method not in ("heartbeat", "status", "voices", "speech", "ocr", "prepare", "format", "synthesize", "align"):
         raise ValueError("Unknown reader request")
     if method == "heartbeat":
         write_json(DIRECTORY / "chrome-connection.json", {"protocolVersion": 1,
@@ -94,6 +95,27 @@ def run(origin, source=None, emit=send):
         emit({'type': 'result', 'value': recognize(request.get('payload'))})
         return
     port = ensure_engine(lambda **value: emit({"type": "progress", **value}))
+    if method in ('format', 'synthesize', 'align'):
+        payload = request.get('payload')
+        if not isinstance(payload, dict): raise ValueError('Invalid pipeline request')
+        if method == 'format' and payload.get('enabled', True):
+            from companion import ensure_formatter
+            ensure_formatter(lambda **value: emit({'type': 'progress', **value, 'message': 'Preparing text formatting…'}))
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        if len(body) > MAX_MESSAGE: raise ValueError('This content window is too large.')
+        query = Request(f'http://127.0.0.1:{port}/pipeline/{method}', data=body, headers={'Content-Type': 'application/json'})
+        try:
+            with HTTP.open(query, timeout=180) as response: value = json.load(response)
+        except HTTPError as error:
+            try: detail = json.loads(error.read(4096))
+            except ValueError: detail = {'error': 'The pipeline request failed.'}
+            emit({'type': 'error', **{key: detail[key] for key in ('error', 'code', 'stage', 'retryable') if key in detail}}); return
+        if method == 'synthesize':
+            pcm = value.pop('pcm'); emit({'type': 'audio', 'value': value})
+            for offset in range(0, len(pcm), 192000): emit({'type': 'chunk', 'data': pcm[offset:offset + 192000]})
+            emit({'type': 'done'})
+        else: emit({'type': 'result', 'value': value})
+        return
     if method == "voices":
         with HTTP.open(f"http://127.0.0.1:{port}/voices", timeout=10) as response:
             emit({"type": "result", "value": json.load(response)})

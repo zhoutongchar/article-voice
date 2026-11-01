@@ -55,7 +55,7 @@ def install(manifest, directory, report, cache=None, base_url="https://huggingfa
     required = sum(f["size"] for m in manifest["models"] for f in m["files"]
                    if not (directory / m["name"] / f["path"]).is_file())
     if shutil.disk_usage(directory).free < required + 256 * 1024 * 1024:
-        raise ValueError("Free about 5 GB on this Mac, then try the voice download again.")
+        raise ValueError(f"Free about {(required + 256 * 1024 * 1024) / 1e9:.1f} GB on this Mac, then try the download again.")
     for model in manifest["models"]:
         for file in model["files"]:
             relative = PurePosixPath(file["path"])

@@ -1,5 +1,6 @@
+import { randomId } from '../hash.js';
 export function recognizeImage(image, signal) {
-  const id = crypto.randomUUID();
+  const id = randomId();
   return new Promise((resolve, reject) => {
     const abort = () => {
       chrome.runtime.sendMessage({ type: 'source-ocr-cancel', id }).catch(() => {});

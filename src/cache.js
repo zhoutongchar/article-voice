@@ -1,4 +1,6 @@
-import { LOCAL_CONFIG, isReferenceId } from './local.js';
+import { digest } from './hash.js';
+import LOCAL_CONFIG from '../local/config.json' with { type: 'json' };
+import { isReferenceId } from './voices.js';
 const MAX_BYTES = 128 * 1024 * 1024;
 let database;
 async function db() {
@@ -28,7 +30,7 @@ export const audioCache = {
   async set(key, value) {
     await transaction('readwrite', (store, tx) => {
       store.put({ key, value });
-      tx.objectStore('metadata').put({ key, bytes: value.pcm.byteLength, time: Date.now() });
+      tx.objectStore('metadata').put({ key, bytes: value.pcm?.byteLength ?? new TextEncoder().encode(JSON.stringify(value)).byteLength, time: Date.now() });
     }, ['audio', 'metadata']);
     // Read only the small metadata records when enforcing the cache budget.
     const entries = await transaction('readonly', store => store.getAll(), ['metadata']);
@@ -51,5 +53,5 @@ export async function cacheKey(text, settings) {
     : ['cartesia', '2026-08-14'];
   const bytes = new TextEncoder().encode(JSON.stringify([...identity, settings.provider === 'local' ? LOCAL_CONFIG.model : settings.model,
     settings.voiceId, settings.language || '', 'pcm_s16le', 24000, text]));
-  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(v => v.toString(16).padStart(2, '0')).join('');
+  return digest(bytes);
 }

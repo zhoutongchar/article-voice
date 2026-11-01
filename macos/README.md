@@ -7,7 +7,7 @@ Requires Apple Silicon and macOS 26 or later. This build has been exercised on a
 ## User setup
 
 1. Download and open **Article Voice**. Choose **Install Article Voice**. It installs into the user's Applications folder and reopens itself.
-2. Voices prepare automatically. First setup downloads 4.60 GB of pinned narrator, aligner and passage formatter files, with progress, pause/resume, and SHA-256 verification. Already verified files are reused; an existing Hugging Face model cache is imported without downloading it again. Nine permanent voice references are included in the app.
+2. Voices prepare automatically. First setup downloads 3.61 GB of pinned narrator and aligner files; the optional formatter adds 0.99 GB on first enabled use, with progress, pause/resume, and SHA-256 verification. Already verified files are reused; an existing Hugging Face model cache is imported without downloading it again. Nine permanent voice references are included in the app.
 3. Choose **Connect Chrome**, add the extension, and start reading. The app detects the extension's background heartbeat through its native host. Its welcome page includes **Try a reading**, which opens a bundled sample article and its reader.
 
 After setup, the Mac setup window can be closed or the app quit. Chrome starts the bundled speech helper on demand. Its local engine exits after ten minutes without requests and restarts when needed. No Python installation, terminal command, API key, or separate model management is needed.
@@ -22,25 +22,27 @@ A distributable Mac build also needs Developer ID signing and notarization. Set 
 
 ## Architecture and privacy
 
-Every new speech passage goes through the bundled Qwen3 1.7B formatter before
-Qwen3-TTS and forced alignment. Post-inference content checks accept formatting
-repairs or retain the original passage. No preclassification selects which text
-goes to the LLM. See [whole-passage preparation](../docs/text-cleanup-experiment.md).
+Content chunks flow through an optional Qwen3 1.7B formatter, paragraph planning,
+Qwen3-TTS, forced alignment and source projection. **Improve text formatting**
+is enabled by default; turning it off passes content through unchanged.
+Post-inference checks accept formatting repairs or retain the original content.
+See [pipeline contracts](../docs/pipeline.md) for the versioned data shapes,
+independent caches, cancellation and resource scheduling.
 
 - The app registers `com.articlevoice.chrome` in the user's Chrome NativeMessagingHosts directory, restricted to the configured extension ID. An existing changed manifest is backed up before replacement.
-- Chrome's native host is a small executable inside the app. It runs the bundled Python runtime and supports heartbeat, status, voice catalog, OCR, text preparation and speech operations. It does not expose a general command interface.
+- Chrome's native host is a small executable inside the app. It runs the bundled Python runtime and supports heartbeat, status, voice catalog, OCR and separate format, synthesis and alignment operations. Legacy combined operations remain adapters. It does not expose a general command interface.
 - Native audio messages are split below Chrome's 1 MB host-to-extension limit. Closing the port cancels that request. Unknown callers and oversized or malformed native messages are rejected.
 - The Chrome engine uses loopback port **4324**. The earlier native preview on 4320 and Chrome Qwen endpoint on 4318 are independent. A ready compatible endpoint on 4318 can be reused through the lightweight gateway; it is never stopped or replaced.
 - Models install under `~/Library/Application Support/Article Voice/Models`. Setup progress and engine logs live in that app directory. They do not contain article text. A versioned heartbeat receipt records only the extension ID and last connection time. The background extension checks in every 30 seconds without starting the voice engine; Chrome may delay alarms during sleep. While the app is open, a heartbeat expires after 90 seconds. Removing or disabling the extension then offers **Reconnect Chrome**, retaining the voices. Closing Chrome offers **Open Chrome**. Launch and wake allow a brief connection check before showing a reconnect prompt. The app cannot distinguish a removed extension from one that is disabled or unable to reach its native host.
 - Speech text stays on the Mac. Model setup downloads public files from Hugging Face; speech uses the bundled local runtime. The optional Cartesia adapter is retained for development; the Mac reader fixes the provider to local speech.
-- The extension's audio cache includes the fixed voice reference identity. Playback speed changes and word seeking reuse generated audio. Local text is split into short aligned pieces, so listening can begin before the full paragraph is generated. At 3×, generation may still need to catch up.
+- The extension's audio cache includes the fixed voice reference identity. Playback speed changes and word seeking reuse generated audio. Ordinary paragraphs stay together; long paragraphs split at complete sentences. Listening can begin before the remaining article is generated. At 3×, generation may still need to catch up.
 
-For OCR, the whole reading window reaches the LLM before speech is split. An
+For OCR with formatting enabled, the whole reading window reaches the LLM before speech is split. An
 unfinished page tail is joined with available continuation text; its prefix is
 consumed once, and original page/word coordinates drive presentation. Audio can
 start before the rest of that page's speech has finished generating.
 
-The current app download is approximately 0.6 GB before compression, plus 4.60 GB of model files at setup. Final compressed sizes are reported by the build artifacts.
+The current app download is approximately 0.6 GB before compression, plus 3.61 GB of core model files and a further 0.99 GB for optional formatting. Final compressed sizes are reported by the build artifacts.
 
 ## Build
 

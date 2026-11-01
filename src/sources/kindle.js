@@ -1,3 +1,4 @@
+import { digest as hashImage } from '../hash.js';
 import { createPagedImageSource } from './paged-image.js';
 
 export function createKindleSource({ document: doc = document, url = new URL(location.href), recognize, onChange = () => {} }) {
@@ -46,7 +47,7 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
     if (!blob || blob.size > 8 * 1024 * 1024) throw new Error('This page image is too large to recognize. Try a smaller reader window.');
     signal?.throwIfAborted();
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const digest = await hashImage(bytes);
     if (pageImage() !== image || image.currentSrc !== src) throw new Error('Kindle changed the page during capture. Reopen the reader at your reading position.');
     let binary = ''; for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
     const rect = image.getBoundingClientRect();

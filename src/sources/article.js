@@ -1,16 +1,17 @@
+import { randomId } from '../hash.js';
 import { extractArticle, rangeFor, wordFromPoint } from '../article.js';
 
 // The article adapter owns DOM coordinates. Neither the player nor the voice
 // engine needs to know how a site renders its text.
 export function createArticleSource() {
-  let unit;
+  let unit = null;
   return {
     id: 'article',
-    capabilities: { pagination: false, prefetch: false },
+    capabilities: { format: 'dom', pagination: false, prefetch: false },
     has: id => id === unit?.id,
     current: () => unit,
     async open() {
-      unit = { ...extractArticle(), id: 'article' };
+      unit = { ...extractArticle(), id: `article:${randomId()}` };
       return unit;
     },
     async prepareNext() { return []; },

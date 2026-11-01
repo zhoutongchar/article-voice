@@ -92,7 +92,7 @@ async function openReader() {
   if (local) document.getElementById('mode').textContent = 'Actual Apple Vision OCR and real local Qwen through the app-managed speech engine.';
   reader = mountReader({ createAdapter: context => adapter = createKindleSource({ ...context,
     url: new URL('https://read.amazon.com/?asin=public-test-book'), recognize }),
-    openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}${new URL(location.href).searchParams.get('port') === '4326' ? '&port=4326' : ''}` : ''}`,
+    openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}${new URL(location.href).searchParams.get('port') === '4326' ? '&port=4326' : ''}${new URL(location.href).searchParams.has('disable') ? '&disable=1' : ''}` : ''}`,
     sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
     onRequest(handle, frame) {
       const listener = async event => {
@@ -218,9 +218,12 @@ if (continuous) {
       const initial = player.session.unit.id;
       const start = performance.now(); doc.getElementById('play').click();
       await wait(() => player.engine.state === 'playing', 'Real Qwen speech did not start', 60000);
-      const record = player.engine.article.preparation;
+      const input = player.engine.segments[0].sourceContent;
+      const original = player.engine.article.blocks.map((text, i) => (i ? player.engine.article.separators?.[i - 1] ?? '\n\n' : '') + text).join('');
+      const record = { original, text: input.text };
+      const disabled = new URL(location.href).searchParams.has('disable');
       if (!record.original.includes('re-') || !record.original.includes('markable')) throw new Error('LLM did not receive the continuation');
-      if (!record.text.includes('remarkable') || /re-\s+markable/.test(record.text)) throw new Error('LLM did not repair the cross-page word');
+      if (!disabled && (!record.text.includes('remarkable') || /re-\s+markable/.test(record.text))) throw new Error('LLM did not repair the cross-page word');
       pass(`Apple Vision OCR → whole page plus continuation → LLM → real Qwen and aligner (${((performance.now() - start) / 1000).toFixed(2)}s to play)`);
       pass(`Pending tail repaired before speech: ${JSON.stringify(record.original.slice(-55))} → ${JSON.stringify(record.text.slice(-52))}`);
       await wait(() => index === 1 && !player.session.presenting, 'Reading did not turn to the measured continuation word', 60000);
@@ -231,9 +234,9 @@ if (continuous) {
       pass('Next page appears when its measured word begins, with original OCR coordinates');
       await wait(() => player.session.unit.id !== initial, 'Reading did not continue beyond the joined sentence', 60000);
       const calls = reader.frame.contentWindow.localCalls;
-      if (calls.filter(call => call.text.includes('remarkable')).length !== 1) throw new Error('The continuation was generated more than once');
-      if (calls.some(call => call.preparation?.status !== 'prepared-piece')) throw new Error('Speech repeated LLM preparation per piece');
-      if (!calls.find(call => call.text.includes('remarkable'))?.text.includes('Another sentence finishes the same paragraph.')) throw new Error('The continued paragraph was split at a sentence');
+      if (calls.filter(call => call.text.includes('markable')).length !== 1) throw new Error('The continuation was generated more than once');
+      if (calls.some(call => call.speech?.kind !== 'speech' || call.audio?.kind !== 'audio' || call.alignment?.kind !== 'alignment')) throw new Error('Pipeline artifacts are missing');
+      if (!calls.find(call => call.text.includes('markable'))?.text.includes('Another sentence finishes the same paragraph.')) throw new Error('The continued paragraph was split at a sentence');
       pass('The entire continued paragraph is one speech request; the following page skips the consumed prefix');
       const stages = calls.map(call => call.timings).filter(Boolean);
       pass(`Measured speech stages: ${JSON.stringify(stages)}`);

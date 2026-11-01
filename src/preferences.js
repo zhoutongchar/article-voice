@@ -10,6 +10,7 @@ export function playerPreferences(saved = {}, localOnly = false) {
   }
   return { ...value, model: value.provider === 'local' ? LOCAL_CONFIG.model : 'sonic-3.6',
     language: value.provider === 'local' && !LOCAL_CONFIG.languages[value.language] ? '' : value.language || '',
+    improveText: value.improveText !== false,
     mode: value.mode === 'ahead' ? 'ahead' : 'stream',
     layout: ['minimal', 'compact', 'full'].includes(value.layout) ? value.layout : 'compact' };
 }

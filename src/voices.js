@@ -1,3 +1,5 @@
+export const isReferenceId = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+
 export function parseVoice(value) {
   if (!value || typeof value.id !== 'string' || !value.id || typeof value.name !== 'string' || !value.name) return null;
   const voice = { id: value.id, name: value.name };

@@ -1,55 +1,46 @@
-import { paragraphPassages, sentencePassages } from './article.js';
-import { preparedTextProjection } from './prepared-text.js';
-import { localPrepareText } from './local.js';
+import { localFormatContent } from './local.js';
 import { alignWords } from './alignment.js';
+import { contentChunksFromUnit, validateContentTransform, planSpeech, sourceRanges } from './pipeline/contracts.js';
 
-// The page owns preparation; speech pieces are created only after it finishes.
-// Original blocks and OCR coordinates never become narration coordinates.
-export async function prepareReadingUnit(unit, settings, signal, prepare = localPrepareText) {
-  if (settings.provider !== 'local' || unit.source?.format !== 'ocr') return unit;
-  let position = 0;
-  const parts = [];
-  const blocks = unit.blocks.map((text, block) => {
-    if (block) { const separator = unit.separators?.[block - 1] ?? '\n\n'; parts.push(separator); position += separator.length; }
-    parts.push(text);
-    const result = { block, start: position, end: position + text.length };
-    position = result.end; return result;
-  });
-  const original = parts.join('');
-  if (!original.trim()) return { ...unit, passages: [] };
-  const record = await prepare(original, signal);
-  if (record.original !== original || typeof record.id !== 'string') throw new Error('The prepared page does not match this reading.');
-  const projection = preparedTextProjection(record);
-  const ranges = (start, end) => {
-    const source = projection.source(start, end);
-    return source ? blocks.filter(block => source.start < block.end && source.end > block.start)
-      .map(block => ({ block: block.block, start: Math.max(source.start, block.start) - block.start,
-        end: Math.min(source.end, block.end) - block.start })) : [];
-  };
-  // Project SOURCE paragraph boundaries through the LLM's mapping. Neither
-  // a flattened blank line nor a new line inserted by the model may split or
-  // merge speech requests. Page-continuation fragments share one paragraph.
-  const passages = paragraphPassages([{ text: original }], { splitLong: false }).flatMap(paragraph => {
-    const prepared = projection.prepared(paragraph.offset, paragraph.offset + paragraph.text.length);
-    if (!prepared) throw new Error('A prepared paragraph lost its source text.');
-    const raw = record.text.slice(prepared.start, prepared.end), text = raw.trim();
-    const offset = prepared.start + raw.indexOf(text);
-    return sentencePassages(text).map(part => {
-      const piece = { text: part.text, offset: offset + part.offset };
-      const sourceRanges = ranges(piece.offset, piece.offset + piece.text.length);
-      return { text: piece.text, preparedOffset: piece.offset, sourceRanges,
-        block: sourceRanges[0]?.block ?? 0, offset: sourceRanges[0]?.start ?? 0,
-        preparation: { id: record.id, original: record.original, start: piece.offset, end: piece.offset + piece.text.length } };
+// All sources share ContentChunk -> optional transform -> SpeechChunk. HTML
+// placeholders are prepared lazily; OCR first seals its assembled page window.
+export async function prepareReadingUnit(unit, settings, signal, format = localFormatContent) {
+  if (settings.provider !== 'local') return unit;
+  const inputs = await contentChunksFromUnit(unit);
+  const fragmentRanges = refs => refs.flatMap(ref => {
+    if (!unit.locations) return ref.unitId === (unit.id || 'preview') ? [{ block: ref.block, start: ref.start, end: ref.end }] : [];
+    return unit.locations.flatMap((location, block) => {
+      if (location.unit !== ref.unitId || location.block !== ref.block) return [];
+      const start = Math.max(location.offset, ref.start), end = Math.min(location.offset + unit.blocks[block].length, ref.end);
+      return end > start ? [{ block, start: start - location.offset, end: end - location.offset }] : [];
     });
+  }).reduce((ranges, range) => {
+    const last = ranges.at(-1);
+    if (last?.block === range.block) { last.start = Math.min(last.start, range.start); last.end = Math.max(last.end, range.end); }
+    else ranges.push(range);
+    return ranges;
+  }, []);
+  const preparePassage = async (segment, currentSettings, currentSignal) => {
+    const input = segment.contentInput;
+    const content = currentSettings.improveText === false ? input : await format(input, { signal: currentSignal, priority: currentSettings.priority || 0, onStage: currentSettings.onStage, scheduler: currentSettings.scheduler });
+    await validateContentTransform(input, content);
+    if (currentSignal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    return (await planSpeech(content)).map(speech => {
+      const ranges = fragmentRanges(sourceRanges(content, speech.range.start, speech.range.end));
+      return { text: speech.text, speechChunk: speech, sourceContent: content, preparedOffset: speech.range.start,
+        sourceRanges: ranges, block: ranges[0]?.block ?? 0, offset: ranges[0]?.start ?? 0 };
+    });
+  };
+  let passages = inputs.map(contentInput => {
+    const ranges = fragmentRanges(sourceRanges(contentInput, 0, contentInput.text.length));
+    return { text: contentInput.text, contentInput, sourceRanges: ranges, block: ranges[0]?.block ?? 0, offset: ranges[0]?.start ?? 0 };
   });
-  return { ...unit, passages, preparation: record,
-    align: (segment, words) => alignWords(segment.text, words).map(word => {
-      const source = word.from == null ? [] : ranges(segment.preparedOffset + word.from, segment.preparedOffset + word.to);
-      // Preserve every recognized fragment when a repaired word spans pages.
-      // Show its final fragment; either fragment can seek the measured word.
-      const primary = source.at(-1);
+  if (unit.source?.format === 'ocr') passages = (await Promise.all(passages.map(segment => preparePassage(segment, settings, signal)))).flat();
+  return { ...unit, prepared: true, passages, preparePassage,
+    align: (segment, words) => (words.every(word => Object.hasOwn(word, 'from')) ? words : alignWords(segment.text, words)).map(word => {
+      const refs = word.sourceRefs || (word.from == null ? [] : sourceRanges(segment.sourceContent, segment.preparedOffset + word.from, segment.preparedOffset + word.to));
+      const ranges = fragmentRanges(refs), primary = ranges.at(-1);
       return primary ? { ...word, block: primary.block, from: primary.start, to: primary.end,
-        sources: source.map(range => ({ block: range.block, from: range.start, to: range.end })) }
-        : { ...word, from: null, to: null };
+        sources: ranges.map(range => ({ block: range.block, from: range.start, to: range.end })) } : { ...word, from: null, to: null };
     }) };
 }

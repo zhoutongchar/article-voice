@@ -1,3 +1,4 @@
+import { sourceSpan } from '../src/alignment.js';
 import { mountReader } from '../src/content.js';
 const output = document.getElementById('result');
 let reader;
@@ -21,7 +22,7 @@ document.getElementById('run').onclick = async event => {
   event.target.disabled = true;
   const results = [], pass = text => { results.push(`PASS · ${text}`); output.textContent = results.join('\n'); };
   try {
-    reader = mountReader({ openFrame: '/player.html?local=1&app=1&fresh=1',
+    reader = mountReader({ openFrame: `/player.html?local=1&app=1&fresh=1${new URL(location.href).searchParams.get('port') === '4326' ? '&port=4326' : ''}${new URL(location.href).searchParams.has('disable') ? '&disable=1' : ''}`,
       sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
       onRequest(handle, frame) {
         const listener = async event => {
@@ -31,11 +32,13 @@ document.getElementById('run').onclick = async event => {
         };
         window.addEventListener('message', listener); return () => window.removeEventListener('message', listener);
       } });
-    await wait(() => reader.frame.contentWindow.testPlayer?.engine.segments.length, 'Reader did not initialize');
+    await wait(() => reader.frame.contentWindow.testPlayer?.engine.article, 'Reader did not initialize');
+    await reader.frame.contentWindow.testPlayer.engine.prepareSource();
     const win = reader.frame.contentWindow, { engine, session } = win.testPlayer;
     const expected = document.getElementById('paragraph').textContent;
     if (long) {
       const block = engine.article.blocks.indexOf(expected);
+      await engine.ensure(engine.segments.findIndex(segment => segment.block === block));
       const pieces = engine.segments.filter(segment => segment.block === block);
       if (pieces.length < 2 || pieces.map(piece => piece.text).join(' ') !== expected) throw new Error('Long paragraph lost text or did not split');
       if (pieces.some(piece => !piece.text.endsWith('.'))) throw new Error('A request ended inside a sentence');
@@ -43,11 +46,11 @@ document.getElementById('run').onclick = async event => {
       const index = engine.segments.indexOf(pieces[0]);
       await engine.go(index); await session.play(); await engine.fill(true);
       const last = pieces[0].result.words.filter(word => word.from != null).at(-1);
-      await session.seekWord({ block, start: pieces[0].offset + last.from, end: pieces[0].offset + last.to });
+      await session.seekWord(sourceSpan(pieces[0], last));
       await wait(() => engine.index === index + 1 && engine.state === 'playing', 'Audio did not advance at the sentence boundary');
       await wait(() => CSS.highlights.has('article-voice-word'), 'Following sentence lost its source highlight');
       const word = pieces[1].result.words.find(word => word.from != null);
-      await session.seekWord({ block, start: pieces[1].offset + word.from, end: pieces[1].offset + word.to });
+      await session.seekWord(sourceSpan(pieces[1], word));
       if (Math.abs(engine.audio.currentTime - word.start) > .3) throw new Error('Word seeking lost the second piece offset');
       const calls = win.localCalls.filter(call => pieces.some(piece => piece.text === call.text));
       if (calls.length !== pieces.length) throw new Error('Speech requests were repeated or dropped');

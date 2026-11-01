@@ -1,5 +1,5 @@
 import { ReaderEngine } from './engine.js';
-import { WorkQueue } from './work-queue.js';
+import { StageScheduler } from './pipeline/scheduler.js';
 import { continuousUnit, fullyConsumed, needsContinuation } from './continuous-text.js';
 
 // The shared session handles ordered units, speech preparation and transitions.
@@ -12,8 +12,8 @@ export class ReadingSession {
     this.discoveries = new Map();
     const highlight = engine.onHighlight;
     engine.onHighlight = value => this.highlight(value, highlight);
-    const generate = engine.generate, prepare = engine.prepare, queue = new WorkQueue();
-    this.generate = (text, settings, signal, priority) => queue.run(() => generate(text, settings, signal), signal, priority);
+    const generate = engine.generate, prepare = engine.prepare, queue = this.scheduler = new StageScheduler({ content: 2, speech: 2 });
+    this.generate = (text, settings, signal, priority) => queue.run('speech', settings.speechChunk?.id || text, () => generate(text, { ...settings, priority }, signal), { signal, priority, resource: 'speech' });
     this.prepare = async (unit, settings, signal, priority) => {
       if (settings.provider === 'local' && unit.source?.format === 'ocr' && !unit.locations) {
         if (!this.discovered) this.prefetch(true);
@@ -35,7 +35,7 @@ export class ReadingSession {
           unit = continuousUnit(ordered[index], ordered.slice(index + 1), this.consumed);
         }
       }
-      return queue.run(() => prepare(unit, settings, signal), signal, priority);
+      return queue.run('content', unit.id || '', () => prepare(unit, { ...settings, priority }, signal), { signal, priority, resource: 'content' });
     };
     engine.generate = (text, settings, signal) => this.generate(text, settings, signal, 0);
     engine.prepare = (unit, settings, signal) => this.prepare(unit, settings, signal, 0);
@@ -94,12 +94,29 @@ export class ReadingSession {
     if (state.state === 'playing') { this.wantsPlay = true; this.prefetch(); }
     if (['paused', 'idle', 'error', 'ended'].includes(state.state)) this.wantsPlay = false;
   }
+  deferred(record) {
+    return this.settings.provider === 'local' && record.unit.source?.format === 'ocr' && needsContinuation(record.unit)
+      && this.future.size >= 2 && record === [...this.future.values()].at(-1) && record.unit.id !== this.endAfter;
+  }
+  bufferedSeconds(contiguous = true) {
+    let seconds = this.engine.bufferedSeconds(contiguous);
+    if (contiguous && this.engine.segments.some(piece => !piece.result)) return seconds;
+    for (const record of this.future.values()) {
+      if (fullyConsumed(record.unit, this.consumed)) continue;
+      seconds += record.engine.bufferedSeconds(contiguous) * record.engine.speed / this.engine.speed;
+      if (contiguous && (!record.engine.segments.length || record.engine.segments.some(piece => !piece.result))) break;
+    }
+    return seconds;
+  }
   prefetch(force = false) {
-    if (!this.unit?.source?.prefetch || this.pending || this.future.size >= 2 || this.endAfter || (!this.wantsPlay && !force)) return;
+    if (!this.unit?.source?.prefetch || this.pending || (!this.wantsPlay && !force)) return;
+    const discoverMore = this.future.size < 2 && !this.endAfter;
+    const needAudio = this.bufferedSeconds(false) < (this.settings.bufferSeconds || 30) && [...this.future.values()].some(record => !record.ready && !this.deferred(record));
+    if (!discoverMore && !needAudio) return;
     const ocr = this.settings.provider === 'local' && this.unit.source?.format === 'ocr';
     const version = this.version, after = ocr ? [...this.future.values()].at(-1)?.unit.id || this.unit.id : this.unit.id;
     const count = ocr ? 1 : 2;
-    const discovered = this.discover(after, count, version).catch(error => {
+    const discovered = (discoverMore ? this.discover(after, count, version) : Promise.resolve()).catch(error => {
       if (version === this.version && error.name !== 'AbortError') { this.invalidate(error); this.onError(error); }
       throw error;
     });
@@ -108,21 +125,24 @@ export class ReadingSession {
       if (version !== this.version) return;
       for (const record of this.future.values()) {
         if (fullyConsumed(record.unit, this.consumed)) { record.ready = true; continue; }
-        if (this.settings.provider === 'local' && record.unit.source?.format === 'ocr' && needsContinuation(record.unit)
-          && this.future.size >= 2 && record === [...this.future.values()].at(-1) && record.unit.id !== this.endAfter) break;
+        if (this.deferred(record)) break;
         try {
           await record.engine.prepareSource();
-          for (let i = 0; i < record.engine.segments.length; i++) {
-            await record.engine.ensure(i);
-            if (version !== this.version) return;
-            const bytes = this.engine.bytes + [...this.future.values()].reduce((sum, value) => sum + value.engine.bytes, 0);
-            if (bytes > 128 * 1024 * 1024) throw new Error('The reading queue reached its audio limit. Stop and start a new reading here.');
+          const remaining = (this.settings.bufferSeconds || 30) - this.bufferedSeconds(false);
+          if (remaining > 0) {
+            record.engine.setSpeed(this.engine.speed);
+            const own = record.engine.segments.reduce((sum, piece) => sum + (piece.result?.duration || 0), 0) / this.engine.speed;
+            record.engine.settings.bufferSeconds = remaining + own;
+            await record.engine.fill();
           }
+          if (version !== this.version) return;
+          const bytes = this.engine.bytes + [...this.future.values()].reduce((sum, value) => sum + value.engine.bytes, 0);
+          if (bytes > 128 * 1024 * 1024) throw new Error('The reading queue reached its audio limit. Stop and start a new reading here.');
         } catch (error) {
           if (record.promoted && error.name === 'AbortError') continue;
           throw error;
         }
-        record.ready = true; this.emit();
+        record.ready = record.engine.segments.length > 0 && record.engine.segments.every(piece => piece.result); this.emit();
       }
     }).catch(error => {
       if (version === this.version && error.name !== 'AbortError') { this.pause(); this.onError(error); }
@@ -150,7 +170,7 @@ export class ReadingSession {
       record.engine = new ReaderEngine({ audio: this.createAudio(), cache: this.engine.cache,
         prepare: (unit, settings, signal) => this.prepare(unit, settings, signal, record.promoted ? 0 : 1),
         generate: (text, settings, signal) => this.generate(text, settings, signal, record.promoted ? 0 : 1) });
-      record.engine.load(unit, this.settings); this.future.set(unit.id, record);
+      record.engine.load(unit, { ...this.settings, priority: 1 }); this.future.set(unit.id, record);
     }
   }
   async advance() {
@@ -171,7 +191,7 @@ export class ReadingSession {
       }
       return false;
     }
-    record.promoted = true;
+    record.promoted = true; record.engine.settings.priority = 0;
     await record.engine.ensure(0);
     if (version !== this.version || !this.wantsPlay) return false;
     const unit = this.displayed === record.unit.id ? record.unit

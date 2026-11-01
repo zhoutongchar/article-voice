@@ -1,5 +1,6 @@
+import { isReferenceId } from './voices.js';
 import { synthesize, listVoices } from './cartesia.js';
-import { LOCAL_CONFIG, localSynthesize, localVoices, isReferenceId } from './local.js';
+import { LOCAL_CONFIG, localSynthesize, localVoices } from './local.js';
 
 const supportedProvider = provider => provider === 'cartesia' || provider === 'local';
 

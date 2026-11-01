@@ -70,8 +70,9 @@ def ensure_engine(report=lambda **_: None, directory=DIRECTORY, resources=RESOUR
             if not target.exists():
                 shutil.copytree(entry, target)
         manifest = json.loads((resources / "local/model-files.json").read_text())
+        manifest = {**manifest, "models": [model for model in manifest["models"] if model["name"] != "formatter"]}
         receipt = directory / "models-ready.json"
-        manifest_id = __import__("hashlib").sha256((resources / "local/model-files.json").read_bytes()).hexdigest()
+        manifest_id = __import__("hashlib").sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
         installed = None
         try:
             installed = json.loads(receipt.read_text())
@@ -86,7 +87,8 @@ def ensure_engine(report=lambda **_: None, directory=DIRECTORY, resources=RESOUR
         if current and current.get("ready"):
             return port
         report(stage="engine", message="Warming up your voices…")
-        upstream = health(4318)
+        try: upstream = health(4318)
+        except ValueError: upstream = None  # An older standalone endpoint remains untouched.
         token = uuid.uuid4().hex
         arguments = [sys.executable, "-s", "-u", str(resources / "local/server.py"), "--port", str(port),
                      "--data-dir", str(directory), "--models-dir", str(directory / "Models"),
@@ -107,3 +109,14 @@ def ensure_engine(report=lambda **_: None, directory=DIRECTORY, resources=RESOUR
         child.terminate()
         child.wait(timeout=10)
         raise ValueError("The voices are taking too long to start. Open Article Voice and retry.")
+
+
+def ensure_formatter(report=lambda **_: None, directory=DIRECTORY, resources=RESOURCES):
+    """Optional download: core voice setup never requires formatter weights."""
+    with locked(directory, 'formatter-setup.lock', report):
+        manifest = json.loads((resources / 'local/model-files.json').read_text())
+        manifest['models'] = [model for model in manifest['models'] if model['name'] == 'formatter']
+        if all((directory / 'Models' / model['name'] / file['path']).is_file() and
+               (directory / 'Models' / model['name'] / file['path']).stat().st_size == file['size']
+               for model in manifest['models'] for file in model['files']): return
+        install(manifest, directory / 'Models', report)

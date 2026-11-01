@@ -21,21 +21,27 @@ export class ReaderEngine {
   load(article, settings, prepared = []) {
     this.stop(); this.loadVersion++;
     this.article = article; this.settings = { ...settings };
-    this.needsPreparation = settings.provider === 'local' && article.source?.format === 'ocr' && !article.preparation;
+    this.needsPreparation = settings.provider === 'local' && !article.prepared;
     this.preparing = null;
     this.segments = article.passages.map((item, index) => {
       const prior = prepared[index];
       return { ...item, ...(prior?.text === item.text && prior.block === item.block && prior.offset === item.offset ? { result: prior.result } : {}) };
     });
     if (this.needsPreparation) this.segments = [];
-    this.index = 0; this.loadedIndex = -1; this.bytes = this.segments.reduce((sum, segment) => sum + (segment.result?.pcm.byteLength || 0), 0); this.error = '';
+    this.index = 0; this.loadedIndex = -1; this.bytes = this.segments.reduce((sum, segment) => sum + (segment.result?.pcm.byteLength || 0), 0); this.error = ''; this.stageEvent = null;
     this.setSpeed(settings.speed || 1); this.emit();
+  }
+  stageObserver(signal, version) {
+    return event => {
+      if (signal.aborted || version !== this.loadVersion) return;
+      this.stageEvent = event; this.settings.onStage?.(event); this.emit();
+    };
   }
   async prepareSource() {
     if (!this.needsPreparation) return;
     const signal = this.controller.signal, version = this.loadVersion;
     if (!this.preparing || this.preparing.signal.aborted) {
-      const pending = this.prepare(this.article, this.settings, signal).then(article => {
+      const pending = this.prepare(this.article, { ...this.settings, onStage: this.stageObserver(signal, version) }, signal).then(article => {
         if (signal.aborted || version !== this.loadVersion) throw new DOMException('Cancelled', 'AbortError');
         this.article = article; this.segments = article.passages.map(item => ({ ...item }));
         this.needsPreparation = false; this.emit();
@@ -53,7 +59,7 @@ export class ReaderEngine {
     for (const segment of this.segments) { if (!segment.result) break; seekableDuration += segment.result.duration; }
     this.onUpdate({ state: this.state, speed: this.speed, index: this.index,
       count: this.segments.length, generated: ready.length, complete, error: this.error,
-      preparingText: this.needsPreparation,
+      preparingText: this.needsPreparation, stage: this.stageEvent,
       duration: ready.reduce((sum, s) => sum + s.result.duration, 0), seekableDuration,
       position: before + (this.loadedIndex === this.index ? this.audio.currentTime || 0 : 0),
       word: this.lastWord || '', pitchPreserved: this.audio.preservesPitch });
@@ -68,17 +74,37 @@ export class ReaderEngine {
     await this.prepareSource();
     const segment = this.segments[index];
     if (!segment) return null;
+    if (segment.contentInput) {
+      const signal = this.controller.signal, version = this.loadVersion;
+      if (!segment.contentPending || segment.contentSignal.aborted) {
+        const pending = this.article.preparePassage(segment, { ...this.settings, onStage: this.stageObserver(signal, version) }, signal).then(pieces => {
+          if (signal.aborted || version !== this.loadVersion) throw new DOMException('Cancelled', 'AbortError');
+          if (!pieces.length) throw new Error('This content has no speech passages.');
+          const position = this.segments.indexOf(segment), extra = pieces.length - 1;
+          Object.assign(segment, pieces[0]); delete segment.contentInput;
+          this.segments.splice(position + 1, 0, ...pieces.slice(1));
+          if (this.index > position) this.index += extra;
+          if (this.loadedIndex > position) this.loadedIndex += extra;
+          this.article.passages = this.segments.map(({ result, pending, pendingSignal, contentPending, contentSignal, ...piece }) => piece);
+          this.emit();
+        });
+        segment.contentPending = pending; segment.contentSignal = signal;
+        pending.catch(() => { if (segment.contentPending === pending) segment.contentPending = null; });
+      }
+      await segment.contentPending;
+    }
     if (segment.result) return segment.result;
     if (segment.pending && !segment.pendingSignal.aborted) return segment.pending;
     const signal = this.controller.signal, version = this.loadVersion;
     const pending = (async () => {
-      const key = await cacheKey(segment.text, this.settings);
-      let result = await this.cache.get(key).catch(() => null);
+      const modular = this.settings.provider === 'local' && !!segment.speechChunk;
+      const key = modular ? null : await cacheKey(segment.text, this.settings);
+      let result = key ? await this.cache.get(key).catch(() => null) : null;
       if (signal.aborted || version !== this.loadVersion) throw new DOMException('Cancelled', 'AbortError');
       if (!result) {
-        result = await this.generate(segment.text, segment.preparation ? { ...this.settings, preparation: segment.preparation } : this.settings, signal);
+        result = await this.generate(segment.text, segment.speechChunk ? { ...this.settings, speechChunk: segment.speechChunk, sourceContent: segment.sourceContent, onStage: this.stageObserver(signal, version) } : this.settings, signal);
         if (signal.aborted || version !== this.loadVersion) throw new DOMException('Cancelled', 'AbortError');
-        await this.cache.set(key, result).catch(() => {}); // Cache failure must not prevent listening.
+        if (key) await this.cache.set(key, result).catch(() => {}); // Cache failure must not prevent listening.
       }
       if (signal.aborted || version !== this.loadVersion) throw new DOMException('Cancelled', 'AbortError');
       if (this.bytes + result.pcm.byteLength > 128 * 1024 * 1024)
@@ -90,12 +116,40 @@ export class ReaderEngine {
     segment.pending = pending; segment.pendingSignal = signal;
     return pending;
   }
-  async fill(ahead = false) {
+  bufferedSeconds(contiguous = true) {
+    let seconds = 0;
+    for (let index = this.index; index < this.segments.length; index++) {
+      const segment = this.segments[index];
+      if (!segment.result) { if (contiguous) break; else continue; }
+      seconds += segment.result.duration;
+      if (index === this.index && this.loadedIndex === index) seconds -= this.audio.currentTime || 0;
+    }
+    return Math.max(0, seconds) / this.speed;
+  }
+  fill(ahead = false) {
+    if (this.filling && this.filling.version === this.loadVersion && !this.filling.signal.aborted) {
+      this.filling.ahead ||= ahead; return this.filling.pending;
+    }
+    const job = { version: this.loadVersion, signal: this.controller.signal, ahead };
+    this.filling = job;
+    job.pending = this.fillWork(job).finally(() => { if (this.filling === job) this.filling = null; });
+    return job.pending;
+  }
+  async fillWork(job) {
     await this.prepareSource();
-    const version = this.loadVersion;
-    for (let i = ahead ? 0 : this.index; i < this.segments.length && (ahead || i <= this.index + 2); i++) {
-      await this.ensure(i);
-      if (version !== this.loadVersion || this.controller.signal.aborted) return;
+    const active = new Map();
+    while (job.version === this.loadVersion && !job.signal.aborted) {
+      let candidates = this.segments.slice(job.ahead ? 0 : this.index).filter(segment => !segment.result);
+      if (!job.ahead && this.bufferedSeconds(false) >= (this.settings.bufferSeconds || 30)) candidates = candidates.slice(0, 1);
+      candidates = candidates.filter(segment => !active.has(segment));
+      for (const segment of candidates) {
+        if (active.size >= 2 || !job.ahead && this.bufferedSeconds() >= (this.settings.bufferSeconds || 30)) break;
+        const task = this.ensure(this.segments.indexOf(segment)); active.set(segment, task);
+        task.finally(() => active.delete(segment)).catch(() => {});
+      }
+      if (!active.size) return;
+      await Promise.race(active.values());
+      if (!job.ahead && this.bufferedSeconds() >= (this.settings.bufferSeconds || 30)) { await Promise.all(active.values()); return; }
     }
   }
   async play() {
@@ -154,11 +208,13 @@ export class ReaderEngine {
     if (!this.segments[index]) return;
     const epoch = ++this.epoch;
     this.wantsPlay = autoplay; cancelAnimationFrame(this.frame);
+    const target = this.segments[index];
     this.audio.pause(); this.index = index; this.onHighlight(null);
     this.state = 'buffering'; this.emit();
     try {
       const result = await this.ensure(index);
       if (epoch !== this.epoch) return;
+      index = this.segments.indexOf(target); this.index = index;
       const offset = resolveTime(result);
       if (this.loadedIndex !== index) this.setAudio(result);
       this.audio.currentTime = Math.max(0, Math.min(offset, result.duration - 0.01));
@@ -181,8 +237,9 @@ export class ReaderEngine {
       || (segment.sourceRanges || [{ block: segment.block, start: segment.offset, end: segment.offset + segment.text.length }])
         .some(range => range.block === position.block && position.start < range.end && position.end > range.start));
     if (index < 0) throw new Error('No audio passage is available for this word.');
+    const target = this.segments[index];
     return this.moveTo(index, result => {
-      const word = result.words.find(word => matches(this.segments[index], word));
+      const word = result.words.find(word => matches(target, word));
       if (!word) throw new Error('No word timing is available for that word. Try another word.');
       return word.start;
     }, true);
@@ -212,6 +269,7 @@ export class ReaderEngine {
         word: word?.word || '' } : null);
     }
     this.emit();
+    if (this.wantsPlay && this.bufferedSeconds() < (this.settings.bufferSeconds || 30) && !this.filling) this.fill().catch(error => { if (error.name !== 'AbortError') this.prefetchError = error; });
   }
   fail(error) {
     this.wantsPlay = false; this.audio.pause(); cancelAnimationFrame(this.frame);

@@ -4,7 +4,7 @@ import { createSource, isImageSourceUrl } from '../src/sources/registry.js';
 import { createPagedImageSource } from '../src/sources/paged-image.js';
 import { SourceHost } from '../src/sources/host.js';
 import { ocrBlocks, imageSpan, imageWordAtPoint } from '../src/sources/ocr.js';
-import { WorkQueue } from '../src/work-queue.js';
+import { StageScheduler } from '../src/pipeline/scheduler.js';
 import { ReaderEngine } from '../src/engine.js';
 import { ReadingSession } from '../src/reading-session.js';
 
@@ -48,8 +48,10 @@ test('OCR boundary keeps UTF-16 offsets, column order and image-relative word hi
 test('source host prepares two units, restores the visible page and retains bounded history as reading advances', async () => {
   const fixture = pages(), host = new SourceHost(fixture.adapter);
   const first = await host.open(); assert.equal(first.source.id, 'test-book');
+  assert.equal(first.contentChunks[0].stability, 'draft');
   const next = await host.prepareNext(first.id);
   assert.deepEqual(next.map(unit => unit.blocks), [['page 1'], ['page 2']]);
+  assert.deepEqual([first, ...next].flatMap(unit => unit.contentChunks.map(chunk => chunk.sequence)), [0, 1, 2]);
   assert.equal(fixture.index, 0); assert.equal(fixture.covered, false);
   await host.present(next[0].id); assert.equal(fixture.index, 1);
   await host.prepareNext(next[0].id); assert.equal(fixture.index, 1);
@@ -91,15 +93,17 @@ test('OCR failure after turning records actual position and restores it; failed 
   assert.equal(fixture.covered, false); await fixture.adapter.dispose(); assert.equal(fixture.disposed, true);
 });
 
-test('shared work queue serializes speech, prioritizes foreground work and drops cancelled pending work', async () => {
-  const queue = new WorkQueue(), order = []; let release;
-  const running = queue.run(() => new Promise(resolve => { release = resolve; }));
+test('resource scheduler prioritizes foreground work and immediately drops cancelled pending jobs', async () => {
+  const queue = new StageScheduler({ rpc: 1 }), order = []; let release;
+  const running = queue.run('speech', 'a', () => new Promise(resolve => { release = resolve; }));
+  await until(() => release);
   const controller = new AbortController();
-  const background = queue.run(async () => order.push('future'), undefined, 1);
-  const cancelled = queue.run(async () => order.push('cancelled'), controller.signal).catch(error => error);
-  const foreground = queue.run(async () => order.push('current'));
-  controller.abort(); release(); await Promise.all([running, background, foreground]);
-  assert.equal((await cancelled).name, 'AbortError'); assert.deepEqual(order, ['current', 'future']);
+  const background = queue.run('speech', 'b', async () => order.push('future'), { priority: 1 });
+  const cancelled = queue.run('speech', 'c', async () => order.push('cancelled'), { signal: controller.signal }).catch(error => error);
+  const foreground = queue.run('speech', 'd', async () => order.push('current'));
+  controller.abort(); assert.equal((await cancelled).name, 'AbortError');
+  release(); await Promise.all([running, background, foreground]);
+  assert.deepEqual(order, ['current', 'future']);
 });
 
 class AudioFixture extends EventTarget {

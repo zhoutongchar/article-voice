@@ -1,6 +1,6 @@
 {
   "name": "article-voice",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Read web articles with Cartesia or local Qwen3-TTS voices, word highlighting and pitch-preserving 3× playback.",
@@ -17,7 +17,8 @@
     "test:setup": ".venv/bin/python tests/chrome_setup_test.py"
   },
   "dependencies": {
-    "@mozilla/readability": "0.6.0"
+    "@mozilla/readability": "0.6.0",
+    "@noble/hashes": "1.8.0"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

@@ -1,0 +1,615 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:article-voice:pipeline:v1",
+  "description": "Version 1 wire shapes. Runtime parsers additionally validate canonical SHA-256 artifact identity, UTF-16 limits/coverage and text/audio binding.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ContentChunk"
+    },
+    {
+      "$ref": "#/$defs/SpeechChunk"
+    },
+    {
+      "$ref": "#/$defs/AudioChunk"
+    },
+    {
+      "$ref": "#/$defs/Alignment"
+    },
+    {
+      "$ref": "#/$defs/StageResult"
+    },
+    {
+      "$ref": "#/$defs/StageFailure"
+    },
+    {
+      "$ref": "#/$defs/FormatRequest"
+    },
+    {
+      "$ref": "#/$defs/SynthesizeRequest"
+    },
+    {
+      "$ref": "#/$defs/AlignRequest"
+    },
+    {
+      "$ref": "#/$defs/PlayableChunk"
+    }
+  ],
+  "$defs": {
+    "TextRange": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ]
+    },
+    "SourceReference": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unitId": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "block": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "unitId",
+        "revision",
+        "block"
+      ]
+    },
+    "ContentChunk": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "content"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "parentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "streamId": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stability": {
+          "enum": [
+            "draft",
+            "sealed"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "paragraphs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextRange"
+          }
+        },
+        "sourceMap": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "identity": {
+                "type": "boolean"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/SourceReference"
+                }
+              }
+            },
+            "required": [
+              "start",
+              "end",
+              "identity",
+              "sources"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "parentIds",
+        "streamId",
+        "sequence",
+        "stability",
+        "text",
+        "paragraphs",
+        "sourceMap"
+      ]
+    },
+    "SpeechChunk": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "speech"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "parentId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "textDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "policy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "parentId",
+        "sequence",
+        "text",
+        "textDigest",
+        "range",
+        "policy"
+      ]
+    },
+    "AudioChunk": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "audio"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "textDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format": {
+          "const": "pcm_s16le"
+        },
+        "sampleRate": {
+          "const": 24000
+        },
+        "channels": {
+          "const": 1
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pcmDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "voiceId": {
+          "type": "string"
+        },
+        "referenceId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "modelRevision": {
+          "type": "string"
+        },
+        "generationId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "textDigest",
+        "format",
+        "sampleRate",
+        "channels",
+        "frames",
+        "pcmDigest",
+        "voiceId",
+        "referenceId",
+        "modelRevision",
+        "generationId"
+      ]
+    },
+    "Alignment": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "alignment"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "audioId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "textDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sampleRate": {
+          "const": 24000
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "startSample": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "endSample": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "range": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextRange"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "text",
+              "startSample",
+              "endSample",
+              "range"
+            ]
+          }
+        },
+        "unmapped": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextRange"
+          }
+        },
+        "alignerRevision": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "audioId",
+        "textDigest",
+        "sampleRate",
+        "frames",
+        "words",
+        "unmapped",
+        "alignerRevision"
+      ]
+    },
+    "StageResult": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "stage": {
+          "enum": [
+            "format",
+            "synthesize",
+            "align"
+          ]
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "bypassed",
+            "rejected"
+          ]
+        },
+        "inputIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "output": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ContentChunk"
+            },
+            {
+              "$ref": "#/$defs/AudioChunk"
+            },
+            {
+              "$ref": "#/$defs/Alignment"
+            }
+          ]
+        },
+        "elapsed": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cached": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "stage",
+        "status",
+        "inputIds",
+        "output",
+        "elapsed"
+      ]
+    },
+    "StageFailure": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "error",
+        "code",
+        "stage",
+        "retryable"
+      ]
+    },
+    "FormatRequest": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/ContentChunk"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "priority": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "default": 0
+        }
+      },
+      "required": [
+        "content"
+      ]
+    },
+    "SynthesizeRequest": {
+      "type": "object",
+      "properties": {
+        "speech": {
+          "$ref": "#/$defs/SpeechChunk"
+        },
+        "voice": {
+          "type": "string"
+        },
+        "referenceId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "language": {
+          "type": "string",
+          "default": ""
+        },
+        "priority": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "default": 0
+        }
+      },
+      "required": [
+        "speech",
+        "voice",
+        "referenceId"
+      ]
+    },
+    "AlignRequest": {
+      "type": "object",
+      "properties": {
+        "speech": {
+          "$ref": "#/$defs/SpeechChunk"
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioChunk"
+        },
+        "language": {
+          "type": "string",
+          "default": ""
+        },
+        "priority": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "default": 0
+        }
+      },
+      "required": [
+        "speech",
+        "audio"
+      ]
+    },
+    "PlayableChunk": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "playable"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contentId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "speechId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "audioId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "alignmentId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sampleRate": {
+          "const": 24000
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "startSample": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "endSample": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/SourceReference"
+                }
+              }
+            },
+            "required": [
+              "text",
+              "startSample",
+              "endSample",
+              "sources"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "contentId",
+        "speechId",
+        "audioId",
+        "alignmentId",
+        "sampleRate",
+        "frames",
+        "words"
+      ]
+    }
+  }
+}

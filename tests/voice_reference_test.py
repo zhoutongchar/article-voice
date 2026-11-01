@@ -57,7 +57,7 @@ class ReferenceTests(unittest.TestCase):
         import mlx.core as mx
         import numpy as np
         with tempfile.TemporaryDirectory() as directory:
-            runtime = SpeechRuntime()
+            runtime = SpeechRuntime(directory)
             runtime.references = ReferenceLibrary(CONFIG, directory)
             reference = runtime.references.load("Ryan", lambda _: b'\1\0' * 72000)
             runtime.reference_audio["Ryan"] = mx.array(np.zeros(72000, dtype=np.float32))

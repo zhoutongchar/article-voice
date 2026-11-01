@@ -14,11 +14,14 @@ from urllib.parse import urlsplit
 from runtime import CONFIG, SpeechRuntime
 from streaming import PROTOCOL, RemoteRuntime, aligned_events
 from text_cleanup import MAX_TEXT, utf16_length
+from contracts import content, speech, audio, PipelineError
+from stage_executor import StageExecutor
 
 HOST = f"127.0.0.1:{CONFIG['port']}"
 INSTANCE = None
-runtime = SpeechRuntime()
-worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen")
+gpu = StageExecutor()
+runtime = SpeechRuntime(executor=gpu)
+worker = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pipeline")
 slots = threading.BoundedSemaphore(4)
 activity_lock = threading.Lock()
 active_requests = 0
@@ -85,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/health":
             self.reply(200, {"ready": runtime.ready, "streaming": PROTOCOL,
-                             "instance": INSTANCE,
+                             "instance": INSTANCE, "contractVersion": 1, "formatterLoaded": getattr(runtime, "formatter_loaded", None),
                              **{key: CONFIG[key] for key in ("model", "revision", "pipeline")}})
         elif path == "/voices":
             self.reply(200, {"voices": runtime.catalog(), "cursor": None,
@@ -106,6 +109,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.permitted():
+            return
+        if self.path in ('/pipeline/format', '/pipeline/synthesize', '/pipeline/align'):
+            self.pipeline_request()
             return
         if self.path not in ("/speech", "/speech/stream", "/prepare"):
             self.reply(404, {"error": "Unknown endpoint"})
@@ -156,6 +162,47 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as error:
             print(f"Local speech failed: {type(error).__name__}", flush=True)
             self.reply(400 if isinstance(error, ValueError) else 500, {"error": str(error) if isinstance(error, ValueError) else "Local speech failed. Check the companion terminal."})
+
+    def pipeline_request(self):
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 1024 * 1024 or self.headers.get_content_type() != 'application/json': raise ValueError('Expected a pipeline artifact')
+            request = json.loads(self.rfile.read(length))
+            priority = request.get('priority', 0)
+            if type(priority) is not int or priority not in (0, 1): raise ValueError('Invalid work priority')
+            if self.path == '/pipeline/format':
+                chunk = content(request.get('content')); enabled = request.get('enabled', True)
+                if type(enabled) is not bool: raise ValueError('Invalid formatter selection')
+                operation = lambda cancelled: runtime.format_content(chunk, enabled, cancelled, priority)
+            else:
+                chunk = speech(request.get('speech')); language = request.get('language', '')
+                if not isinstance(language, str) or language and language not in CONFIG['languages']: raise ValueError('Invalid language')
+                if self.path == '/pipeline/synthesize':
+                    voice = request.get('voice')
+                    if voice not in {v['id'] for v in CONFIG['voices']}: raise ValueError('Invalid voice')
+                    if runtime.reference_identity(voice) != request.get('referenceId'):
+                        self.reply(409, {'error': 'Reconnect your voice reference.', 'code': 'REFERENCE_CHANGED', 'stage': 'synthesize', 'retryable': False}); return
+                    operation = lambda cancelled: runtime.synthesize(chunk, voice, language, cancelled, priority)
+                else:
+                    sound = audio(request.get('audio'))
+                    operation = lambda cancelled: runtime.align(chunk, sound, language, cancelled, priority)
+        except (ValueError, TypeError, AttributeError) as error:
+            self.reply(400, {'error': str(error), 'code': getattr(error, 'code', 'INVALID_ARTIFACT'), 'stage': 'contract', 'retryable': False}); return
+        if not slots.acquire(blocking=False):
+            self.reply(429, {'error': 'The voice queue is full. Retry shortly.', 'code': 'QUEUE_FULL', 'stage': 'schedule', 'retryable': True}); return
+        cancelled = threading.Event()
+        future = worker.submit(operation, cancelled)
+        future.add_done_callback(lambda _: slots.release())
+        try:
+            while True:
+                try:
+                    result = future.result(timeout=.1)
+                    self.reply(200, result); return
+                except TimeoutError:
+                    if self.disconnected(): cancelled.set(); future.cancel(); return
+        except Exception as error:
+            self.reply(400 if isinstance(error, ValueError) else 500, {'error': str(error) if isinstance(error, ValueError) else 'Pipeline stage failed.',
+                'code': getattr(error, 'code', 'STAGE_FAILED'), 'stage': getattr(error, 'stage', self.path.rsplit('/', 1)[-1]), 'retryable': getattr(error, 'retryable', False)})
 
     def speech_request(self, request):
         text, voice, language = request.get("text"), request.get("voice"), request.get("language", "")
@@ -234,6 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("--upstream-port", type=int)
     parser.add_argument("--models-dir")
     parser.add_argument("--idle-timeout", type=float, default=0)
+    parser.add_argument("--no-formatter", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
@@ -241,7 +289,7 @@ if __name__ == "__main__":
         parser.error("upstream port must be a different loopback port between 1 and 65535")
     HOST = f"127.0.0.1:{args.port}"
     INSTANCE = args.instance_token
-    runtime = RemoteRuntime(args.upstream_port) if args.upstream_port else SpeechRuntime(args.data_dir, args.models_dir)
+    runtime = RemoteRuntime(args.upstream_port) if args.upstream_port else SpeechRuntime(args.data_dir, args.models_dir, executor=gpu, formatter_enabled=not args.no_formatter)
     print("Loading Qwen speech and word alignment on your Mac…", flush=True)
     worker.submit(runtime.load).result()
     print(f"Local Article Voice ready · http://{HOST} · no cloud inference", flush=True)
@@ -263,3 +311,4 @@ if __name__ == "__main__":
     finally:
         server.server_close()
         worker.shutdown(wait=True, cancel_futures=True)
+        gpu.shutdown(wait=True, cancel_futures=True)

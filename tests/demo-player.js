@@ -1,6 +1,6 @@
 import { startPlayer } from '../src/player.js';
 import { synthesize, listVoices } from '../src/cartesia.js';
-import { LOCAL_CONFIG, localSynthesize, localVoices, localPrepareText } from '../src/local.js';
+import { LOCAL_CONFIG, localSynthesize, localVoices, localFormatContent } from '../src/local.js';
 import { prepareReadingUnit } from '../src/reading-preparation.js';
 const managedApp = new URL(location.href).searchParams.has('app');
 const testPort = new URL(location.href).searchParams.get('port') === '4326' ? '4326' : '4324';
@@ -22,7 +22,7 @@ const fixtureVoices = [
 ];
 let settings = { provider: 'cartesia', apiKey: 'recorded-fixture', voiceId: 'recorded-fixture', voiceName: fixtureVoices[0].name, voiceLibrary: fixtureVoices, model: 'sonic-3.6', speed: 1, follow: true, mode: 'stream' };
 if (live) settings = { ...settings, apiKey: 'live-test-proxy', voiceId: config.voiceId, voiceName: 'Live Cartesia' };
-if (local) settings = { provider: 'local', apiKey: '', voiceId: 'Ryan', voiceName: 'Ryan · local Qwen',
+if (local) settings = { improveText: !new URL(location.href).searchParams.has('disable'), provider: 'local', apiKey: '', voiceId: 'Ryan', voiceName: 'Ryan · local Qwen',
   voiceLibrary: LOCAL_CONFIG.voices, model: LOCAL_CONFIG.model, speed: 1, follow: true, mode: 'stream' };
 const transport = {
   settings: async () => settings,
@@ -62,15 +62,16 @@ const fixtureVoiceList = async (_key, { query = '', gender = '', language = '' }
     && query.toLowerCase().split(/\s+/).every(term => `${v.name} ${v.description}`.toLowerCase().includes(term))), cursor: null
 });
 const freshCache = new URL(location.href).searchParams.has('fresh') ? new Map() : null;
-window.localCalls = [];
+window.localCalls = []; window.pipelineEvents = [];
+const stageCache = freshCache ? { get: async key => freshCache.get(key), set: async (key, value) => freshCache.set(key, value) } : undefined;
 const appGenerate = async (text, settings, signal) => {
   const started = performance.now();
-  const result = await localSynthesize(text, settings, signal, appFetch);
-  window.localCalls.push({ text, preparation: result.preparation, timings: result.timings, wall: (performance.now() - started) / 1000 });
+  const result = await localSynthesize(text, { ...settings, stageCache, onStage: event => { window.pipelineEvents.push(event); settings.onStage?.(event); } }, signal, appFetch);
+  window.localCalls.push({ text, speech: settings.speechChunk, audio: result.audioArtifact, alignment: result.alignment, timings: result.timings, wall: (performance.now() - started) / 1000 });
   return result;
 };
 window.testPlayer = await startPlayer({ transport, cache: freshCache ? { get: async key => freshCache.get(key), set: async (key, value) => freshCache.set(key, value), clear: async () => freshCache.clear() } : undefined,
-  prepare: local && managedApp ? (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, (text, signal) => localPrepareText(text, signal, appFetch)) : undefined,
+  prepare: local && managedApp ? (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, (content, context) => localFormatContent(content, { ...context, onStage: event => { window.pipelineEvents.push(event); context.onStage?.(event); } }, appFetch)) : undefined,
   generate: local ? managedApp ? appGenerate : undefined : live ? liveGenerate : fixtureGenerate,
   loadVoices: local ? managedApp ? (key, options) => localVoices(key, options, appFetch) : undefined : live ? (key, options) => listVoices(key, options, (url, request) => fetch(`/test/live-voices${url.search}`, { signal: request.signal })) : fixtureVoiceList });
 if (!live && !local) document.getElementById('voice-description').textContent = 'Recorded browser test voices. This fixture repeats sample audio; use the local reader for real narration.';

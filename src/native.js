@@ -18,7 +18,7 @@ export function nativeRequest(method, payload, signal, progress = () => {}) {
       signal?.addEventListener('abort', abort, { once: true });
       port.onMessage.addListener(message => {
         if (message?.type === 'progress') { progress(message); return; }
-        if (message?.type === 'error') { finish(new Error(message.error)); return; }
+        if (message?.type === 'error') { finish(Object.assign(new Error(message.error), { code: message.code, stage: message.stage, retryable: message.retryable })); return; }
         if (message?.type === 'result') { finish(null, message.value); return; }
         if (message?.type === 'audio' && !audio) { audio = message.value; return; }
         if (message?.type === 'chunk' && audio && typeof message.data === 'string') {

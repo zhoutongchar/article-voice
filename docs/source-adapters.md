@@ -1,6 +1,6 @@
 # Reading source adapters
 
-The source adapter owns the website. The common reading session owns the queue. The voice provider owns synthesis. These are separate choices: adding a source does not add another player or speech engine.
+The source adapter owns the website. The common reading session owns the queue. The voice provider owns synthesis. These are separate choices: adding a source does not add another player or speech engine. The versioned content, speech, audio, alignment and playable contracts are defined in [pipeline contracts](pipeline.md).
 
 ```text
 Source registry → site adapter → reading units → shared session → ReaderEngine → voice provider
@@ -30,7 +30,7 @@ A unit has an opaque stable ID, title, URL, language, optional position label, a
 
 ## Shared queue
 
-`ReadingSession` retains up to two future units with the same voice settings as the current unit. OCR startup fetches one continuation page first; further acquisition runs in the background. `WorkQueue` serializes preparation and voice requests and gives current playback priority over pending background work. Cached audio and ready engine results move into the current engine without generation being repeated. Speed remains a playback setting.
+`ReadingSession` retains up to two future units with the same voice settings as the current unit. OCR startup fetches one continuation page first; further acquisition runs in the background. `StageScheduler` gives preparation and speech independent bounded queues, with current playback priority over pending lookahead. Native GPU inference has one owner; CPU/source work and playback can overlap it. Cached audio and ready engine results move into the current engine without generation being repeated. Speed remains a playback setting.
 
 For local OCR, `continuousUnit` joins an unfinished page tail with the next page’s entire continuing paragraph before the LLM sees it. Original lines retain newlines, including wrap hyphens. The entire assembled reading window is prepared once, then mapped back to source paragraphs, with one speech request per ordinary paragraph and complete-sentence grouping for paragraphs over 1,500 characters. A consumed-prefix ledger prevents that continuation from being voiced again on its original page. Committed narration is never rewritten when later pages arrive. This uses the available lookahead, not unlimited book context; very long continuations can exceed that window.
 

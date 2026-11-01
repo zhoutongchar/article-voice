@@ -40,6 +40,10 @@ export async function startPlayer({ transport = bridge, generate, prepare, cache
         buffering: 'Preparing your voice…', playing: 'Reading · pitch preserved', paused: 'Paused',
         generating: 'Generating the article…', ended: 'Finished · play to listen again', error: 'Reading stopped' };
       $('status').textContent = state.state === 'buffering' && state.preparingText ? 'Preparing this page…' : labels[state.state];
+      if (state.state === 'buffering' && state.stage?.state === 'progress' && state.stage.message) {
+        const progress = state.stage.total > 0 ? ` ${Math.round(state.stage.completed / state.stage.total * 100)}%` : '';
+        $('status').textContent = state.stage.message + progress;
+      }
       showCoverage();
       $('play').setAttribute('aria-label', state.state === 'playing' || state.state === 'buffering' ? 'Pause reading' : 'Play article');
       $('play-icon').textContent = state.state === 'playing' || state.state === 'buffering' ? 'Ⅱ' : '▶';
@@ -145,6 +149,9 @@ export async function startPlayer({ transport = bridge, generate, prepare, cache
   $('speed').onchange = async () => { engine.setSpeed($('speed').value); await save({ speed: engine.speed }); };
   $('follow').checked = settings.follow;
   $('follow').onchange = async () => { showFollowPause(0); const saving = save({ follow: $('follow').checked }); send({ type: 'follow', value: settings.follow }); await saving; };
+  $('improve-text').closest('label').hidden = settings.provider !== 'local';
+  $('improve-text').checked = settings.improveText;
+  $('improve-text').onchange = async () => { preview.stop(); const saving = save({ improveText: $('improve-text').checked }); reload(); await saving; };
   $('seek').onchange = () => engine.seek(Number($('seek').value));
   $('retry-voices').onclick = () => refreshVoices();
   $('voice').onchange = chooseVoice;

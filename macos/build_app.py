@@ -68,9 +68,10 @@ if not (RESOURCES / 'PythonPackages').exists():
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
 marker.write_text(fingerprint)
 (RESOURCES / 'local').mkdir(exist_ok=True)
-for name in ('server.py', 'runtime.py', 'references.py', 'streaming.py', 'speech-policy.json', 'text_cleanup.py', 'config.json', 'model-files.json', 'models.py', 'companion.py', 'native_host.py', 'setup.py'):
+for name in ('server.py', 'runtime.py', 'contracts.py', 'artifact_store.py', 'stage_executor.py', 'references.py', 'streaming.py', 'speech-policy.json', 'text_cleanup.py', 'config.json', 'model-files.json', 'models.py', 'companion.py', 'native_host.py', 'setup.py'):
     shutil.copy2(ROOT / 'local' / name, RESOURCES / 'local' / name)
 shutil.copytree(MAC / 'Resources' / 'Licenses', RESOURCES / 'Licenses', dirs_exist_ok=True)
+shutil.copytree(ROOT / 'pipeline', RESOURCES / 'pipeline', dirs_exist_ok=True)
 shutil.copytree(ROOT / 'chrome', RESOURCES / 'chrome', dirs_exist_ok=True)
 if (RESOURCES / 'ChromeExtension').exists():
     shutil.rmtree(RESOURCES / 'ChromeExtension')
@@ -100,7 +101,7 @@ info = {
     'CFBundleExecutable': 'ArticleVoice',
     'CFBundlePackageType': 'APPL',
     'CFBundleShortVersionString': version,
-    'CFBundleVersion': '17',
+    'CFBundleVersion': '18',
     'CFBundleIconFile': 'AppIcon',
     'NSPrincipalClass': 'NSApplication',
     'NSHighResolutionCapable': True,

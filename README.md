@@ -4,7 +4,7 @@ Listen to Chrome articles with natural voices running on your Mac. Follow the sp
 
 **[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1)** · [Mac app architecture and build](macos/README.md)
 
-The `main` source now includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. These changes and full-passage LLM preparation are newer than the linked 0.5.1 binary preview. Current source builds download 4.60 GB of model files; the linked older binary downloads 3.61 GB. YouTube transcript support is a future adapter.
+The `main` source now includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. The 0.8.0 source uses versioned [pipeline contracts](docs/pipeline.md), optional text formatting, independent speech/alignment caches and bounded stage scheduling. These changes are newer than the linked 0.5.1 binary preview. Current builds install 3.61 GB of core model files and download a further 0.99 GB on first enabled formatter use. YouTube transcript support is a future adapter.
 
 ![Article Voice's thin audio player](docs/images/minimal-player.png)
 
@@ -28,7 +28,7 @@ The separate **Article-Voice-Chrome.zip** download contains the same extension f
 
 ## Reading
 
-- **Automatic text preparation:** every new passage goes through a small local LLM before speech and alignment. It repairs formatting where possible; content-changing responses retain the original. No special text markings are required.
+- **Optional text preparation:** **Improve text formatting** is on by default. A small local LLM repairs formatting before speech and alignment; content-changing responses retain the original. Turn it off to bypass the model entirely, with source highlighting preserved.
 - **Continuous OCR reading:** line wraps and an unfinished page tail reach the LLM together with available continuation text, before speech is split. Joined words keep their page coordinates, and continuation text is voiced once.
 - **Nine voices** use permanent reference recordings to keep the speaker consistent across passages and articles.
 - **Minimal / Compact / Full** buttons switch between a thin audio bar, a compact player, and a player with settings. All three include **Follow words**.
@@ -36,7 +36,7 @@ The separate **Article-Voice-Chrome.zip** download contains the same extension f
 - **Your scrolling takes priority:** manual scrolling pauses automatic page following for ten seconds after your latest gesture. Speech and word highlighting continue.
 - **Kindle follows its own navigation:** turning a page or changing the book layout reconnects the reader automatically and rebuilds the queue. Playing continues from the start of the newly visible page; a paused reader stays paused.
 - **Listen as passages are ready** is the default. Full view also offers **After the whole article is ready**, useful when generation cannot keep up at 3×.
-- **Local audio caching** reuses speech for the same text, voice, and language. Speed changes do not generate new audio. Save WAV and Open saved audio can preserve a reading with its word timings.
+- **Independent local caches** reuse speech for the same text, voice and language, and reuse measured alignment separately. Source coordinates are projected afresh. Speed changes do not generate new audio. Save WAV and Open saved audio can preserve a reading with its word timings.
 
 After setup, you can close or quit the Mac app. Chrome starts the bundled speech helper when needed; it exits after ten minutes without requests. No terminal command, API key, or Accessibility permission is required. Once models are installed, speech works offline for articles already available in Chrome.
 
@@ -44,7 +44,7 @@ To update, install the newer app, click **Reload** on Article Voice in `chrome:/
 
 ## Local speech and privacy
 
-Current source builds prepare every passage with **Qwen3 1.7B at 4-bit**, then use **Qwen3-TTS 1.7B Base at 4-bit** through MLX-Audio and **Qwen3-ForcedAligner 0.6B** for measured word timings. Each preset uses the same reference recording and transcript across passages. Model revisions, generation settings, download sizes, and SHA-256 digests are pinned in [`local/config.json`](local/config.json) and [`local/model-files.json`](local/model-files.json).
+Current source builds optionally prepare content with **Qwen3 1.7B at 4-bit**, then use **Qwen3-TTS 1.7B Base at 4-bit** through MLX-Audio and **Qwen3-ForcedAligner 0.6B** for measured word timings. Each preset uses the same reference recording and transcript across passages. Model revisions, generation settings, download sizes, and SHA-256 digests are pinned in [`local/config.json`](local/config.json) and [`local/model-files.json`](local/model-files.json).
 
 Article text and generated speech stay on this Mac in the app flow. Setup downloads public model files from Hugging Face. There is no analytics, telemetry, paid API requirement, or automatic cloud fallback. The extension stores preferences locally and caches audio in IndexedDB with a 128 MB budget. Clearing audio cache retains the voice references.
 
@@ -77,7 +77,7 @@ npm run local:setup
 npm run local
 ```
 
-The standalone server binds only to `127.0.0.1:4318`. First startup prepares nine permanent voice references and downloads pinned narrator, reference-generator, and aligner weights (about **6.91 GB** total for development). The installed app instead includes prepared references and downloads the narrator, aligner and passage formatter (**4.60 GB** in current source builds). Once the standalone server reports ready, **Open local reader** and **Test local Qwen** in the browser harness use real speech. Stop the server with Control-C.
+The standalone server binds only to `127.0.0.1:4318`. First startup prepares nine permanent voice references and downloads pinned narrator, reference-generator, and aligner weights (about **6.91 GB** total for development). The installed app instead includes prepared references and downloads the narrator and aligner (**3.61 GB**); the optional passage formatter adds **0.99 GB** on first enabled use. Once the standalone server reports ready, **Open local reader** and **Test local Qwen** in the browser harness use real speech. Stop the server with Control-C.
 
 To package the Mac app after the references are prepared:
 
@@ -97,6 +97,8 @@ npm run mac:check
 The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a gitignored `.env`; see `.env.example`. Never commit credentials or generated model caches.
 
 ## Verification
+
+The 0.8.0 contract refactor passes **76 JavaScript tests, 44 Python tests and 48 native checks**. Draft 2020-12 schemas and examples validate, and the published TypeScript declarations pass strict checking. Real-model Chrome fixtures exercised formatter-disabled playback with no formatter weights present, whole-window OCR formatting with a cross-page word, source highlighting, sentence-boundary playback and seeking. An ordinary HTTP page also passed the three-layout, whole-article and ten-second scroll checks. See [pipeline verification](docs/pipeline.md#verification-scope) for the distinction between browser fixtures, native transport and installed-extension coverage.
 
 The 0.7.0 source enables [whole-passage preparation](docs/text-cleanup-experiment.md)
 before local speech and alignment. The installed Chrome reader, real native
@@ -127,10 +129,10 @@ For the 0.5.1 preview, prior local verification passed JavaScript checks and bro
 
 For the 0.6.5 source, the installed extension was tested on Kindle Cloud Reader with local Qwen speech and Apple Vision OCR. Playback completed four consecutive automatic page turns at 2.25×, with source word highlighting and two-page audio preparation/refill. Manual page turns while stopped, paused, or playing and a fullscreen layout change reconnected to the visible page without the former fatal error. Word seeking, resume after reconnection, and Stop clearing playback and marks while leaving Kindle controls available were checked. A page/layout change starts reading from the beginning of the newly visible page; it does not locate the old spoken word across reflow.
 
-The JavaScript suite passes 54 tests. The browser source fixture separately checks two-page preparation/restoration, 3× playback, identical-image repaints, manual navigation while paused and playing, layout changes, cancellation during reconnection, retry, and cleanup. Native Chrome window controls preserve the installed player; claiming its tab through browser automation can interrupt the extension frame. Live compatibility has been exercised on one book and Mac, not every Kindle title or layout.
+At 0.6.5 the JavaScript suite passed 54 tests. The browser source fixture separately checks two-page preparation/restoration, 3× playback, identical-image repaints, manual navigation while paused and playing, layout changes, cancellation during reconnection, retry, and cleanup. Native Chrome window controls preserve the installed player; claiming its tab through browser automation can interrupt the extension frame. Live compatibility has been exercised on one book and Mac, not every Kindle title or layout.
 
 The browser harness uses production reader modules with a development transport; it does not itself establish installed-extension behavior. Model download resume and integrity are tested with a controlled HTTP server; a complete uncached 3.61 GB download has not been repeated. Signing/notarization and a clean-machine install remain unverified.
 
 ## Credits
 
-Article extraction uses [Mozilla Readability](https://github.com/mozilla/readability), with its [Apache-2.0 notice](public/READABILITY-LICENSE.txt). Passage preparation uses [Qwen3](https://huggingface.co/Qwen/Qwen3-1.7B) and [MLX-LM](https://github.com/ml-explore/mlx-lm). Speech uses [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), MLX Community quantizations, and [MLX-Audio](https://github.com/Blaizzy/mlx-audio). Model attribution and bundled third-party notices are in [`macos/Resources/Licenses`](macos/Resources/Licenses). This is an independent implementation and does not use Lisen code or branding.
+Artifact hashing uses [Noble Hashes](https://github.com/paulmillr/noble-hashes), with its bundled MIT notice. Article extraction uses [Mozilla Readability](https://github.com/mozilla/readability), with its [Apache-2.0 notice](public/READABILITY-LICENSE.txt). Passage preparation uses [Qwen3](https://huggingface.co/Qwen/Qwen3-1.7B) and [MLX-LM](https://github.com/ml-explore/mlx-lm). Speech uses [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), MLX Community quantizations, and [MLX-Audio](https://github.com/Blaizzy/mlx-audio). Model attribution and bundled third-party notices are in [`macos/Resources/Licenses`](macos/Resources/Licenses). This is an independent implementation and does not use Lisen code or branding.

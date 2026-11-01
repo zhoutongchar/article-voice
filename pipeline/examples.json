@@ -1,0 +1,162 @@
+[
+  {
+    "id": "dc670d6be07a29b43d566bae6b108c027ebff806eb9ed7a439c833d495eae4b4",
+    "schemaVersion": 1,
+    "kind": "content",
+    "parentIds": [],
+    "streamId": "example-book",
+    "sequence": 0,
+    "stability": "sealed",
+    "text": "😀 A complete paragraph. Another sentence.",
+    "paragraphs": [
+      {
+        "start": 0,
+        "end": 42
+      }
+    ],
+    "sourceMap": [
+      {
+        "start": 0,
+        "end": 42,
+        "identity": true,
+        "sources": [
+          {
+            "unitId": "example-page",
+            "revision": "example-page",
+            "block": 0,
+            "start": 0,
+            "end": 42
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "caf16d0aae651a27fcb9b41730333fb1fa829db21849ab5094a754bb746eff79",
+    "schemaVersion": 1,
+    "kind": "speech",
+    "parentId": "dc670d6be07a29b43d566bae6b108c027ebff806eb9ed7a439c833d495eae4b4",
+    "sequence": 0,
+    "text": "😀 A complete paragraph. Another sentence.",
+    "textDigest": "3e0a1bd98401bd1b92969dde8466a909b55c7415716f271f983caa3447242961",
+    "range": {
+      "start": 0,
+      "end": 42
+    },
+    "policy": "paragraph-sentence-1500-v1"
+  },
+  {
+    "id": "6eb3879cf56dc86aba2897d505a57277b0310a8bac1e16f40855fd7311fd13d8",
+    "schemaVersion": 1,
+    "kind": "audio",
+    "textDigest": "3e0a1bd98401bd1b92969dde8466a909b55c7415716f271f983caa3447242961",
+    "format": "pcm_s16le",
+    "sampleRate": 24000,
+    "channels": 1,
+    "frames": 24000,
+    "pcmDigest": "bb918147fe10391b43adeba4bd21b9ef32e5bd6c5076c3517733a05ed6dd0569",
+    "voiceId": "Ryan",
+    "referenceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelRevision": "example-narrator-revision",
+    "generationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  {
+    "id": "3835a5e5ddca7d55ed2946ae76e87ce04b56da752754cb9ff40e9131ef214449",
+    "schemaVersion": 1,
+    "kind": "alignment",
+    "audioId": "6eb3879cf56dc86aba2897d505a57277b0310a8bac1e16f40855fd7311fd13d8",
+    "textDigest": "3e0a1bd98401bd1b92969dde8466a909b55c7415716f271f983caa3447242961",
+    "sampleRate": 24000,
+    "frames": 24000,
+    "words": [
+      {
+        "text": "complete",
+        "startSample": 2400,
+        "endSample": 12000,
+        "range": {
+          "start": 5,
+          "end": 13
+        }
+      }
+    ],
+    "unmapped": [
+      {
+        "start": 0,
+        "end": 5
+      },
+      {
+        "start": 13,
+        "end": 42
+      }
+    ],
+    "alignerRevision": "example-aligner-revision"
+  },
+  {
+    "id": "b2c106bb8f54505e0c5355a95ddd91a898e8c91b658d5e8d7c67d7db8d281c9b",
+    "schemaVersion": 1,
+    "kind": "playable",
+    "contentId": "dc670d6be07a29b43d566bae6b108c027ebff806eb9ed7a439c833d495eae4b4",
+    "speechId": "caf16d0aae651a27fcb9b41730333fb1fa829db21849ab5094a754bb746eff79",
+    "audioId": "6eb3879cf56dc86aba2897d505a57277b0310a8bac1e16f40855fd7311fd13d8",
+    "alignmentId": "3835a5e5ddca7d55ed2946ae76e87ce04b56da752754cb9ff40e9131ef214449",
+    "sampleRate": 24000,
+    "frames": 24000,
+    "words": [
+      {
+        "text": "complete",
+        "startSample": 2400,
+        "endSample": 12000,
+        "sources": [
+          {
+            "unitId": "example-page",
+            "revision": "example-page",
+            "block": 0,
+            "start": 5,
+            "end": 13
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "schemaVersion": 1,
+    "stage": "format",
+    "status": "bypassed",
+    "inputIds": [
+      "dc670d6be07a29b43d566bae6b108c027ebff806eb9ed7a439c833d495eae4b4"
+    ],
+    "output": {
+      "id": "dc670d6be07a29b43d566bae6b108c027ebff806eb9ed7a439c833d495eae4b4",
+      "schemaVersion": 1,
+      "kind": "content",
+      "parentIds": [],
+      "streamId": "example-book",
+      "sequence": 0,
+      "stability": "sealed",
+      "text": "😀 A complete paragraph. Another sentence.",
+      "paragraphs": [
+        {
+          "start": 0,
+          "end": 42
+        }
+      ],
+      "sourceMap": [
+        {
+          "start": 0,
+          "end": 42,
+          "identity": true,
+          "sources": [
+            {
+              "unitId": "example-page",
+              "revision": "example-page",
+              "block": 0,
+              "start": 0,
+              "end": 42
+            }
+          ]
+        }
+      ]
+    },
+    "elapsed": 0
+  }
+]

@@ -83,6 +83,24 @@ class RemoteRuntime:
         self._voices = voices
         self.ready = True
 
+    @property
+    def formatter_loaded(self):
+        try: return self._request('/health').get('formatterLoaded')
+        except OSError: return None
+
+    def format_content(self, chunk, enabled=True, cancelled=None, priority=0):
+        if cancelled and cancelled.is_set(): raise InterruptedError('Reading cancelled')
+        return self._request('/pipeline/format', {'content': chunk, 'enabled': enabled, 'priority': priority})
+
+    def synthesize(self, chunk, voice, language, cancelled=None, priority=0):
+        if cancelled and cancelled.is_set(): raise InterruptedError('Reading cancelled')
+        return self._request('/pipeline/synthesize', {'speech': chunk, 'voice': voice, 'language': language,
+                                                     'referenceId': self.reference_identity(voice), 'priority': priority})
+
+    def align(self, chunk, sound, language='', cancelled=None, priority=0):
+        if cancelled and cancelled.is_set(): raise InterruptedError('Reading cancelled')
+        return self._request('/pipeline/align', {'speech': chunk, 'audio': sound, 'language': language, 'priority': priority})
+
     def catalog(self):
         return self._voices
 

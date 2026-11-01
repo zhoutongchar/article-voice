@@ -1,36 +1,65 @@
+import { digest } from '../src/hash.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LOCAL_CONFIG, localSynthesize, localVoices } from '../src/local.js';
 import { canGenerate, normalizeProviderSettings } from '../src/providers.js';
+import { artifact, contentFromUnit, planSpeech } from '../src/pipeline/contracts.js';
 import { cacheKey } from '../src/cache.js';
 
 const referenceId = 'a'.repeat(64);
 const identity = { model: LOCAL_CONFIG.model, revision: LOCAL_CONFIG.revision, pipeline: LOCAL_CONFIG.pipeline };
-const recording = () => ({ ...identity, sampleRate: 24000, pcm: btoa('\0'.repeat(48000)), duration: 1,
-  referenceId, words: [{ word: 'hello', start: .1, end: .8 }] });
 const settings = { provider: 'local', model: LOCAL_CONFIG.model, voiceId: 'Ryan', language: 'en', voiceReferenceId: referenceId };
+const memory = () => { const values = new Map(); return { values, get: async key => values.get(key), set: async (key, value) => values.set(key, value) }; };
+async function fixture() {
+  const sourceContent = await contentFromUnit({ id: 'test', blocks: ['hello'] }), speech = (await planSpeech(sourceContent))[0], pcm = new Uint8Array(48000);
+  const sound = await artifact('audio', { textDigest: speech.textDigest, format: 'pcm_s16le', sampleRate: 24000, channels: 1, frames: 24000,
+    pcmDigest: await digest(pcm), voiceId: 'Ryan', referenceId, modelRevision: LOCAL_CONFIG.revision, generationId: 'b'.repeat(64) });
+  const timing = await artifact('alignment', { audioId: sound.id, textDigest: speech.textDigest, sampleRate: 24000, frames: 24000,
+    words: [{ text: 'hello', startSample: 2400, endSample: 19200, range: { start: 0, end: 5 } }], unmapped: [], alignerRevision: LOCAL_CONFIG.alignerRevision });
+  const options = { ...settings, speechChunk: speech, sourceContent, stageCache: memory() }, calls = [];
+  const fetcher = async (url, request) => {
+    const body = JSON.parse(request.body); calls.push(url);
+    assert.equal(body.speech.id, speech.id); assert.equal(request.body.includes('never-send-this'), false);
+    const stage = url.endsWith('synthesize') ? 'synthesize' : 'align';
+    return Response.json({ schemaVersion: 1, stage, status: 'completed', inputIds: stage === 'align' ? [speech.id, sound.id] : [speech.id],
+      output: stage === 'align' ? timing : sound, ...(stage === 'synthesize' ? { pcm: btoa('\0'.repeat(48000)) } : {}), elapsed: .1 });
+  };
+  return { speech, sound, timing, options, fetcher, calls };
+}
 
-test('local generation needs no API key and sends only a passage, voice and language to loopback', async () => {
+test('local speech uses independent synthesis/alignment contracts without API credentials', async () => {
+  const { options, fetcher, calls } = await fixture();
   assert.ok(canGenerate(settings)); assert.equal(canGenerate({ ...settings, provider: 'cartesia' }), false);
-  assert.equal(canGenerate({ ...settings, voiceReferenceId: undefined }), false);
-  const signal = new AbortController().signal;
-  const result = await localSynthesize('hello', { ...settings, apiKey: 'never-send-this' }, signal, async (url, request) => {
-    assert.equal(url, 'http://127.0.0.1:4318/speech'); assert.equal(request.signal, signal);
-    assert.deepEqual(JSON.parse(request.body), { text: 'hello', voice: 'Ryan', language: 'en', referenceId });
-    assert.equal(JSON.stringify(request).includes('never-send-this'), false);
-    return Response.json(recording());
-  });
-  assert.equal(result.pcm.length, 48000); assert.equal(result.words[0].start, .1);
+  const result = await localSynthesize('hello', { ...options, apiKey: 'never-send-this' }, new AbortController().signal, fetcher);
+  assert.deepEqual(calls.map(url => new URL(url).pathname), ['/pipeline/synthesize', '/pipeline/align']);
+  assert.equal(result.pcm.length, 48000); assert.equal(result.words[0].start, .1); assert.equal(result.words[0].from, 0);
 });
 
-test('local provider rejects stale model identity, missing alignment, malformed audio and invalid timing', async () => {
-  for (const change of [{ revision: 'old' }, { referenceId: 'b'.repeat(64) }, { words: [] }, { duration: 7 }, { words: [{ word: 'hello', start: .8, end: .1 }] }])
-    await assert.rejects(localSynthesize('hello', settings, undefined, async () => Response.json({ ...recording(), ...change })));
-  await assert.rejects(localSynthesize('hello', settings, undefined, async () => { throw new TypeError('fetch failed'); }), /Start the local Qwen server/);
-  await assert.rejects(localSynthesize('hello', settings, undefined, async () => { throw new DOMException('Cancelled', 'AbortError'); }), { name: 'AbortError' });
-  await assert.rejects(localSynthesize('hello', { ...settings, voiceReferenceId: undefined }, undefined, () => assert.fail('Missing reference must not initiate inference')), /fixed voice reference/);
-  await assert.rejects(localSynthesize('hello', settings, undefined, async () => new Response('', { status: 409 })), /reference changed/);
-  await assert.rejects(localSynthesize('hello', settings, undefined, async () => Response.json({ error: 'This paragraph exceeds the local audio limit.' }, { status: 400 })), /paragraph exceeds/);
+test('speech and alignment caches are independent and survive a different source parent', async () => {
+  const { options, fetcher, calls } = await fixture();
+  await localSynthesize('hello', options, undefined, fetcher);
+  const sourceContent = await contentFromUnit({ id: 'another-page', blocks: ['hello'] }), speechChunk = (await planSpeech(sourceContent))[0];
+  const reused = await localSynthesize('hello', { ...options, sourceContent, speechChunk }, undefined, fetcher);
+  assert.equal(reused.playable.words[0].sources[0].unitId, 'another-page');
+  assert.equal(calls.length, 2);
+  for (const key of options.stageCache.values.keys()) if (key.startsWith('alignment:')) options.stageCache.values.delete(key);
+  await localSynthesize('hello', options, undefined, fetcher);
+  assert.equal(calls.filter(url => url.endsWith('synthesize')).length, 1);
+  assert.equal(calls.filter(url => url.endsWith('align')).length, 2);
+});
+
+test('local stages reject changed artifacts, missing alignment and mismatched measured inputs', async () => {
+  for (const change of [{ modelRevision: 'old' }, { referenceId: 'b'.repeat(64) }, { frames: 7 }, { textDigest: 'c'.repeat(64) }]) {
+    const f = await fixture();
+    await assert.rejects(localSynthesize('hello', f.options, undefined, async () => Response.json({ schemaVersion: 1, stage: 'synthesize', status: 'completed', inputIds: [f.speech.id],
+      output: { ...f.sound, ...change }, pcm: btoa('\0'.repeat(48000)) })));
+  }
+  const f = await fixture();
+  await assert.rejects(localSynthesize('hello', f.options, undefined, async () => { throw new TypeError('fetch failed'); }), /Start the local Qwen server/);
+  await assert.rejects(localSynthesize('hello', f.options, undefined, async () => { throw new DOMException('Cancelled', 'AbortError'); }), { name: 'AbortError' });
+  await assert.rejects(localSynthesize('hello', { ...f.options, voiceReferenceId: undefined }, undefined, () => assert.fail('Must not request speech')), /fixed voice reference/);
+  await assert.rejects(localSynthesize('hello', f.options, undefined, async () => Response.json({ error: 'reference changed' }, { status: 409 })), /reference changed/);
+  await assert.rejects(localSynthesize('hello', f.options, undefined, async () => Response.json({ error: 'This paragraph exceeds the local audio limit.' }, { status: 400 })), /paragraph exceeds/);
 });
 
 test('local voice metadata supports filters without hiding multilingual speakers by native language', async () => {

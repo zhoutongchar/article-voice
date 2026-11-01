@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readSSE, pcmWav, synthesize, listVoices, API_VERSION } from '../src/cartesia.js';
 import { alignWords, wordAtPosition } from '../src/alignment.js';
-import { paragraphPassages, sentencePassages, PARAGRAPH_CHARACTERS } from '../src/article.js';
+import { paragraphPassages, sentencePassages, PARAGRAPH_CHARACTERS } from '../src/text-segmentation.js';
 import { cacheKey } from '../src/cache.js';
 import { readRecording } from '../src/recording.js';
 import { parseVoice } from '../src/voices.js';
