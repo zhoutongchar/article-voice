@@ -28,12 +28,17 @@ repairs or retain the original passage. No preclassification selects which text
 goes to the LLM. See [whole-passage preparation](../docs/text-cleanup-experiment.md).
 
 - The app registers `com.articlevoice.chrome` in the user's Chrome NativeMessagingHosts directory, restricted to the configured extension ID. An existing changed manifest is backed up before replacement.
-- Chrome's native host is a small executable inside the app. It runs the bundled Python runtime and supports only heartbeat, status, voice catalog, and speech operations. It does not expose a general command interface.
+- Chrome's native host is a small executable inside the app. It runs the bundled Python runtime and supports heartbeat, status, voice catalog, OCR, text preparation and speech operations. It does not expose a general command interface.
 - Native audio messages are split below Chrome's 1 MB host-to-extension limit. Closing the port cancels that request. Unknown callers and oversized or malformed native messages are rejected.
 - The Chrome engine uses loopback port **4324**. The earlier native preview on 4320 and Chrome Qwen endpoint on 4318 are independent. A ready compatible endpoint on 4318 can be reused through the lightweight gateway; it is never stopped or replaced.
 - Models install under `~/Library/Application Support/Article Voice/Models`. Setup progress and engine logs live in that app directory. They do not contain article text. A versioned heartbeat receipt records only the extension ID and last connection time. The background extension checks in every 30 seconds without starting the voice engine; Chrome may delay alarms during sleep. While the app is open, a heartbeat expires after 90 seconds. Removing or disabling the extension then offers **Reconnect Chrome**, retaining the voices. Closing Chrome offers **Open Chrome**. Launch and wake allow a brief connection check before showing a reconnect prompt. The app cannot distinguish a removed extension from one that is disabled or unable to reach its native host.
 - Speech text stays on the Mac. Model setup downloads public files from Hugging Face; speech uses the bundled local runtime. The optional Cartesia adapter is retained for development; the Mac reader fixes the provider to local speech.
 - The extension's audio cache includes the fixed voice reference identity. Playback speed changes and word seeking reuse generated audio. Local text is split into short aligned pieces, so listening can begin before the full paragraph is generated. At 3×, generation may still need to catch up.
+
+For OCR, the whole reading window reaches the LLM before speech is split. An
+unfinished page tail is joined with available continuation text; its prefix is
+consumed once, and original page/word coordinates drive presentation. Audio can
+start before the rest of that page's speech has finished generating.
 
 The current app download is approximately 0.6 GB before compression, plus 4.60 GB of model files at setup. Final compressed sizes are reported by the build artifacts.
 

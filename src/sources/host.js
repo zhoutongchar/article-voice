@@ -10,10 +10,11 @@ export class SourceHost {
       blocks: unit.blocks.map(block => block.text), passages: splitPassages(unit.blocks) };
   }
   async open() { return this.serialize(await this.adapter.open()); }
-  async prepareNext(after) {
+  async prepareNext(after, count = 2) {
+    if (count !== 1 && count !== 2) throw new Error('Choose one or two following pages.');
     if (!this.adapter.capabilities.prefetch) return [];
     if (!this.adapter.has(after)) throw new Error('This reading position is no longer available.');
-    return (await this.adapter.prepareNext(after, 2)).map(unit => this.serialize(unit));
+    return (await this.adapter.prepareNext(after, count)).map(unit => this.serialize(unit));
   }
   async present(id) {
     if (!this.adapter.has(id)) throw new Error('This queued reading is no longer available.');

@@ -91,9 +91,25 @@ class TextCleanupTests(unittest.TestCase):
 
     def test_invalid_or_oversized_passages_fail_before_inference(self):
         f = formatter('unused')
-        for value in ('', '  ', None, '😀' * 1251):
+        for value in ('', '  ', None, '😀' * 6001):
             with self.assertRaises(ValueError): f.prepare(value)
         self.assertEqual(f.inputs, [])
+
+    def test_prepared_page_pieces_are_verified_and_do_not_repeat_inference(self):
+        f = formatter('A remarkable place. Another sentence.')
+        result = f.prepare('A re-\nmarkable place.\nAnother sentence.')
+        piece = 'A remarkable place.'
+        self.assertEqual(f.piece(piece, {'id': result['id'], 'start': 0, 'end': len(piece)})['status'], 'prepared-piece')
+        self.assertEqual(len(f.inputs), 1)
+        for selection, text in [({'id': 'missing', 'start': 0, 'end': 1}, 'A'),
+                                ({'id': result['id'], 'start': False, 'end': 1}, 'A'),
+                                ({'id': result['id'], 'start': 0, 'end': len(piece)}, 'changed')]:
+            with self.assertRaises(ValueError): f.piece(text, selection)
+        f.cache.clear()
+        self.assertEqual(f.piece(piece, {'id': result['id'], 'original': result['original'], 'start': 0, 'end': len(piece)})['contextId'], result['id'])
+        self.assertEqual(len(f.inputs), 2, 'Restart recovery re-prepares the whole original page once')
+        event = threading.Event(); event.set()
+        with self.assertRaises(InterruptedError): f.piece(piece, {'id': result['id'], 'start': 0, 'end': len(piece)}, event)
 
 
 if __name__ == '__main__': unittest.main()

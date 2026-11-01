@@ -14,6 +14,9 @@ from difflib import SequenceMatcher
 MODEL = "mlx-community/Qwen3-1.7B-4bit"
 REVISION = "3b1b1768f8f8cf8351c712464f906e86c2b8269e"
 POLICY = "whole-passage-formatting-v1"
+MAX_TEXT = 12000
+MAX_TOKENS = 6000
+MAX_SECONDS = 20
 SYSTEM = (
     "You prepare an entire extracted webpage passage for narration. Inspect the complete passage, "
     "including unfamiliar formatting. Correct presentation artifacts, spacing, punctuation and broken "
@@ -31,7 +34,8 @@ SYSTEM = (
 
 def preparation_identity():
     recipe = {"model": MODEL, "revision": REVISION, "policy": POLICY, "prompt": SYSTEM,
-              "temperature": 0, "maxSeconds": 8, "maxTokens": 1600}
+              "temperature": 0, "maxSeconds": MAX_SECONDS, "maxTokens": MAX_TOKENS,
+              "maxText": MAX_TEXT, "scope": "ocr-page-before-speech-pieces-v1"}
     return hashlib.sha256(json.dumps(recipe, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -91,18 +95,18 @@ class TextFormatter:
             tokenize=False, add_generation_prompt=True, enable_thinking=False)
         started, chunks, finish = time.perf_counter(), [], None
         for part in stream_generate(self.model, self.tokenizer, prompt=prompt,
-                                    max_tokens=1600, sampler=make_sampler(temp=0)):
+                                    max_tokens=MAX_TOKENS, sampler=make_sampler(temp=0)):
             if cancelled and cancelled.is_set():
                 raise InterruptedError("Preparation cancelled")
             chunks.append(part.text); finish = part.finish_reason
-            if time.perf_counter() - started > 8:
+            if time.perf_counter() - started > MAX_SECONDS:
                 return "".join(chunks), "time-limit"
         return "".join(chunks).strip(), None if finish == "stop" else "output-limit"
 
     def prepare(self, text, cancelled=None):
         started = time.perf_counter()
-        if not isinstance(text, str) or not text.strip() or utf16_length(text) > 2500:
-            raise ValueError("Expected a passage of 1–2500 UTF-16 characters")
+        if not isinstance(text, str) or not text.strip() or utf16_length(text) > MAX_TEXT:
+            raise ValueError("This page contains too much text. Increase the book font size and reopen the reader.")
         if cancelled and cancelled.is_set():
             raise InterruptedError("Preparation cancelled")
         if text in self.cache:
@@ -118,7 +122,32 @@ class TextFormatter:
                   "reason": reason, "spans": source_spans(text, prepared), "model": MODEL, "revision": REVISION,
                   "policy": POLICY, "identity": preparation_identity(), "cached": False,
                   "elapsed": time.perf_counter() - started}
+        result['id'] = hashlib.sha256((result['identity'] + '\0' + text + '\0' + prepared).encode()).hexdigest()
         self.cache[text] = result
         while len(self.cache) > 128:
             self.cache.popitem(last=False)
         return result
+
+    def piece(self, text, selection, cancelled=None):
+        if cancelled and cancelled.is_set(): raise InterruptedError('Preparation cancelled')
+        if not isinstance(selection, dict) or not isinstance(selection.get('id'), str):
+            raise ValueError('Invalid prepared page')
+        record = next((record for record in self.cache.values() if record['id'] == selection['id']), None)
+        elapsed = 0
+        if record is None and isinstance(selection.get('original'), str):
+            restored = self.prepare(selection['original'], cancelled)
+            elapsed = restored['elapsed']
+            if restored['id'] == selection['id']: record = restored
+        start, end = selection.get('start'), selection.get('end')
+        if record is None:
+            raise ValueError('This page preparation expired. Reopen the reader.')
+        if type(start) is not int or type(end) is not int or not 0 <= start < end <= utf16_length(record['text']):
+            raise ValueError('Invalid prepared page range')
+        try:
+            expected = record['text'].encode('utf-16-le')[start * 2:end * 2].decode('utf-16-le')
+        except UnicodeDecodeError:
+            raise ValueError('Invalid prepared page range') from None
+        if text != expected:
+            raise ValueError('The speech piece does not match its prepared page')
+        return {'contextId': record['id'], 'identity': record['identity'], 'status': 'prepared-piece',
+                'start': start, 'end': end, 'elapsed': elapsed}

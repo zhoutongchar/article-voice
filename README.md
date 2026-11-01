@@ -29,6 +29,7 @@ The separate **Article-Voice-Chrome.zip** download contains the same extension f
 ## Reading
 
 - **Automatic text preparation:** every new passage goes through a small local LLM before speech and alignment. It repairs formatting where possible; content-changing responses retain the original. No special text markings are required.
+- **Continuous OCR reading:** line wraps and an unfinished page tail reach the LLM together with available continuation text, before speech is split. Joined words keep their page coordinates, and continuation text is voiced once.
 - **Nine voices** use permanent reference recordings to keep the speaker consistent across passages and articles.
 - **Minimal / Compact / Full** buttons switch between a thin audio bar, a compact player, and a player with settings. All three include **Follow words**.
 - **Word highlighting and seeking:** the current passage stays green, the spoken word is yellow, and clicking a word moves playback there.
@@ -103,6 +104,12 @@ protocol and six-passage browser comparison passed with original-source
 highlighting, word seeking, content-preserving fallbacks and pitch-preserving
 playback. JavaScript checks
 passed 57 tests and Python checks passed 33 tests.
+
+The 0.7.1 continuous OCR fixture passed with actual Apple Vision, the local LLM,
+Qwen speech and forced alignment, including a word split across page images,
+automatic presentation and no repeated continuation text. JavaScript checks
+passed 63 tests and Python checks passed 35 tests. This fixture is separate from
+live Amazon Kindle; see [the verification scope](docs/text-cleanup-experiment.md#verification-scope).
 
 For the 0.5.1 preview, prior local verification passed JavaScript checks and browser harness checks for the three layouts, playback continuity, whole-article mode, and the ten-second scroll suspension. The minimal player measured **480 × 52 CSS pixels**. Real Qwen checks exercised speech, measured alignment, nine voices, word seeking, cached replay, and playback around 3× on the test Mac. The user also confirmed that the installed extension's sample reading works.
 

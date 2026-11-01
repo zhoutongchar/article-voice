@@ -48,7 +48,7 @@ export function createPagedImageSource({ id, access, recognize }) {
     } finally { access.uncover(); }
   }
   const source = {
-    id, capabilities: { pagination: true, prefetch: true, scroll: false },
+    id, capabilities: { format: 'ocr', pagination: true, prefetch: true, scroll: false },
     has: key => units.some(unit => unit.id === key),
     current: () => units[current],
     invalidate() { invalid = true; generation++; active?.abort(); },

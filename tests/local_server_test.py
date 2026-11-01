@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local"))
 from server import Handler, ThreadingHTTPServer, runtime
+import server as service
 
 
 class ServerBoundaryTests(unittest.TestCase):
@@ -63,6 +64,24 @@ class ServerBoundaryTests(unittest.TestCase):
                 body = {"text": "hello", "voice": "Ryan", "referenceId": reference}
                 status, _, _ = self.request("POST", "/speech", json.dumps(body), {"Content-Type": "application/json"})
                 self.assertEqual(status, 409)
+
+    def test_full_page_preparation_and_verified_piece_reach_the_runtime_as_separate_operations(self):
+        page = 'A line wraps in the mid-\ndle of a paragraph. ' * 80
+        calls = []
+        producer = SimpleNamespace(reference_identity=lambda voice: 'a' * 64,
+            prepare=lambda text, cancelled: calls.append(('prepare', text)) or {'preparation': {'original': text}},
+            generate=lambda text, voice, language, cancelled, **options: calls.append(('speech', text, options)) or {'ok': True})
+        with patch.object(service, 'runtime', producer):
+            status, _, _ = self.request('POST', '/prepare', json.dumps({'text': page}), {'Content-Type': 'application/json'})
+            self.assertEqual(status, 200)
+            selection = {'id': 'b' * 64, 'original': page, 'start': 0, 'end': 4}
+            status, _, _ = self.request('POST', '/speech', json.dumps({'text': 'A li', 'voice': 'Ryan', 'referenceId': 'a' * 64,
+                                                                     'preparation': selection}), {'Content-Type': 'application/json'})
+            self.assertEqual(status, 200)
+        self.assertEqual(calls, [('prepare', page), ('speech', 'A li', {'preparation': selection})])
+        for text in ('', [], '😀' * 6001):
+            status, _, _ = self.request('POST', '/prepare', json.dumps({'text': text}), {'Content-Type': 'application/json'})
+            self.assertEqual(status, 400)
 
 
 if __name__ == "__main__":

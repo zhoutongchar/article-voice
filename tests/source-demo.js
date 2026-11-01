@@ -1,7 +1,12 @@
 import { mountReader } from '../src/content.js';
 import { createKindleSource } from '../src/sources/kindle.js';
 
-const pages = [
+const continuous = new URL(location.href).searchParams.has('continuous');
+const pages = continuous ? [
+  ['A useful reader keeps a sentence together, even when a page ends with re-'],
+  ['markable details that complete the thought.', 'A new paragraph begins beside the garden gate. The story carries on in the same voice.'],
+  ['The last page is quiet. There is time to finish the story.']
+] : [
   ['A quiet room waits at the end of the street.', 'Morning light moves across the table. There is time to notice it.'],
   ['A bicycle passes the window. Someone waves hello.', 'The garden gate is open, and the path leads between the trees.'],
   ['Paper lanterns move in the afternoon breeze.', 'A familiar voice turns another page. The story keeps its gentle rhythm.'],
@@ -87,7 +92,7 @@ async function openReader() {
   if (local) document.getElementById('mode').textContent = 'Actual Apple Vision OCR and real local Qwen through the app-managed speech engine.';
   reader = mountReader({ createAdapter: context => adapter = createKindleSource({ ...context,
     url: new URL('https://read.amazon.com/?asin=public-test-book'), recognize }),
-    openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}` : ''}`,
+    openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}${new URL(location.href).searchParams.get('port') === '4326' ? '&port=4326' : ''}` : ''}`,
     sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
     onRequest(handle, frame) {
       const listener = async event => {
@@ -199,3 +204,44 @@ document.getElementById('run-checks').onclick = async event => {
   }
   finally { event.target.disabled = false; }
 };
+
+if (continuous) {
+  document.title = 'Article Voice · continuous OCR reading';
+  document.getElementById('run-checks').textContent = 'Run continuous reading checks';
+  document.getElementById('run-checks').onclick = async event => {
+    event.target.disabled = true;
+    const messages = [], pass = text => { messages.push(`PASS · ${text}`); output.textContent = messages.join('\n'); };
+    try {
+      await openReader();
+      await wait(() => reader.frame.contentWindow.testPlayer?.engine.article, 'Reader did not initialize', 60000);
+      const player = reader.frame.contentWindow.testPlayer, doc = reader.frame.contentWindow.document;
+      const initial = player.session.unit.id;
+      const start = performance.now(); doc.getElementById('play').click();
+      await wait(() => player.engine.state === 'playing', 'Real Qwen speech did not start', 60000);
+      const record = player.engine.article.preparation;
+      if (!record.original.includes('re-') || !record.original.includes('markable')) throw new Error('LLM did not receive the continuation');
+      if (!record.text.includes('remarkable') || /re-\s+markable/.test(record.text)) throw new Error('LLM did not repair the cross-page word');
+      pass(`Apple Vision OCR → whole page plus continuation → LLM → real Qwen and aligner (${((performance.now() - start) / 1000).toFixed(2)}s to play)`);
+      pass(`Pending tail repaired before speech: ${JSON.stringify(record.original.slice(-55))} → ${JSON.stringify(record.text.slice(-52))}`);
+      await wait(() => index === 1 && !player.session.presenting, 'Reading did not turn to the measured continuation word', 60000);
+      if (!document.querySelector('#article-voice-marks [data-av-word]')) {
+        const mark = document.getElementById('article-voice-marks');
+        if (!mark?.children.length) throw new Error('The continued page has no source-word marker');
+      }
+      pass('Next page appears when its measured word begins, with original OCR coordinates');
+      await wait(() => player.session.unit.id !== initial, 'Reading did not continue beyond the joined sentence', 60000);
+      const calls = reader.frame.contentWindow.localCalls;
+      if (calls.filter(call => call.text.includes('remarkable')).length !== 1) throw new Error('The continuation was generated more than once');
+      if (calls.some(call => call.preparation?.status !== 'prepared-piece')) throw new Error('Speech repeated LLM preparation per piece');
+      pass('Continued sentence is voiced once; following page skips the consumed prefix');
+      const stages = calls.map(call => call.timings).filter(Boolean);
+      pass(`Measured speech stages: ${JSON.stringify(stages)}`);
+      player.session.pause();
+      document.body.dataset.sourceChecks = 'passed';
+      pass('CONTINUOUS OCR CHECKS PASSED');
+    } catch (error) {
+      reader?.frame.contentWindow.testPlayer?.session.pause();
+      messages.push(`FAIL · ${error.message}`); output.textContent = messages.join('\n'); document.body.dataset.sourceChecks = 'failed';
+    } finally { event.target.disabled = false; }
+  };
+}

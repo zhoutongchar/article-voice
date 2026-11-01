@@ -159,7 +159,7 @@ export function mountReader({ openFrame, onRequest, createAdapter = createSource
       source ||= newSource();
       return source.open().then(value => article = value);
     }
-    if (message.type === 'source-next') return source.prepareNext(message.after);
+    if (message.type === 'source-next') return source.prepareNext(message.after, message.count);
     if (message.type === 'source-present') { clear(); return source.present(message.id).then(value => article = value); }
     if (message.type === 'source-cancel') {
       sourceVersion++;

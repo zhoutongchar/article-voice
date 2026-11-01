@@ -31,6 +31,7 @@ export async function localVoices(_key, { query = '', gender = '', language = ''
 export async function localSynthesize(text, settings, signal, fetcher = fetch) {
   if (!isReferenceId(settings.voiceReferenceId)) throw new Error('Reconnect your voices in Settings to load the fixed voice reference.');
   const payload = { text, voice: settings.voiceId, language: settings.language || '', referenceId: settings.voiceReferenceId };
+  if (settings.preparation) payload.preparation = settings.preparation;
   const value = hasNative() && fetcher === fetch
     ? await nativeRequest('speech', payload, signal)
     : await request('/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal }, fetcher);
@@ -46,7 +47,14 @@ export async function localSynthesize(text, settings, signal, fetcher = fetch) {
       || item.start < previous || item.end < item.start || item.end > duration + .01) throw new Error('Local Qwen returned invalid word timestamps.');
     previous = item.start;
   }
-  return { pcm, duration, words: value.words, referenceId: value.referenceId, preparation: value.preparation };
+  return { pcm, duration, words: value.words, referenceId: value.referenceId, preparation: value.preparation, timings: value.timings };
+}
+
+export async function localPrepareText(text, signal, fetcher = fetch) {
+  const value = hasNative() && fetcher === fetch ? await nativeRequest('prepare', { text }, signal)
+    : await request('/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal }, fetcher);
+  validateIdentity(value);
+  return value.preparation;
 }
 
 function validateIdentity(value) {

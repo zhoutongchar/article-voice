@@ -79,21 +79,28 @@ class SpeechRuntime:
         if not CONFIG["pipeline"].endswith(preparation_identity()[:12]):
             raise ValueError("The speech preparation recipe changed. Rebuild Article Voice before using cached audio.")
 
-    def generate(self, text, voice, language, cancelled=None, prepare=True):
+    def prepare(self, text, cancelled=None):
+        if self.formatter is None:
+            self.load()
+        return {'preparation': self.formatter.prepare(text, cancelled),
+                **{key: CONFIG[key] for key in ('model', 'revision', 'pipeline')}}
+
+    def generate(self, text, voice, language, cancelled=None, prepare=True, preparation=None):
         import mlx.core as mx
         import numpy as np
         from scipy.signal import resample_poly
         started = time.perf_counter()
         if self.tts is None:
             self.load()
-        prepared = self.formatter.prepare(text, cancelled) if prepare else {
+        prepared = self.formatter.piece(text, preparation, cancelled) if preparation is not None else self.formatter.prepare(text, cancelled) if prepare else {
             "original": text, "text": text, "candidate": text, "status": "bypassed", "reason": "comparison-only",
             "spans": source_spans(text, text), "model": FORMATTER_MODEL, "revision": FORMATTER_REVISION,
             "policy": POLICY, "identity": preparation_identity(), "cached": False, "elapsed": 0}
-        spoken = prepared["text"]
+        spoken = text if preparation is not None else prepared['text']
         reference = self.references.voices[voice]
         chunks = []
         generated_tokens = 0
+        speech_started = time.perf_counter()
         # Streaming yields let Stop discard the remaining work after a short chunk.
         for result in self.tts.generate(text=spoken, ref_audio=self.reference_audio[voice], ref_text=reference.transcript,
                                         lang_code=CONFIG["languages"].get(language, "auto"), **CONFIG["generation"],
@@ -116,6 +123,7 @@ class SpeechRuntime:
         if cancelled and cancelled.is_set():
             raise InterruptedError("Reading cancelled")
         duration = len(audio) / 24000
+        speech_seconds = time.perf_counter() - speech_started
         # The aligner accepts 16 kHz samples. Its times refer to the actual audio,
         # rather than evenly dividing duration among the words.
         align_language = CONFIG["languages"].get(language)
@@ -137,4 +145,5 @@ class SpeechRuntime:
         return {"pcm": base64.b64encode(pcm).decode("ascii"), "duration": duration, "words": words,
                 "sampleRate": 24000, "model": CONFIG["model"], "revision": CONFIG["revision"],
                 "pipeline": CONFIG["pipeline"], "referenceId": reference.identity, "elapsed": time.perf_counter() - started,
-                "preparation": prepared}
+                "preparation": prepared, 'timings': {'prepare': prepared['elapsed'], 'speech': speech_seconds,
+                'align': time.perf_counter() - speech_started - speech_seconds}}

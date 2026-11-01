@@ -32,6 +32,9 @@ test('registry selects a site adapter before the article fallback and accepts ne
 });
 
 test('OCR boundary keeps UTF-16 offsets, column order and image-relative word hit testing', () => {
+  const wrapped = ocrBlocks({ lines: [line('re-', .05, .05), line('markable', .05, .10)] });
+  assert.equal(wrapped.length, 1); assert.equal(wrapped[0].text, 're-\nmarkable');
+  assert.equal(wrapped[0].words[1].start, 4);
   const blocks = ocrBlocks({ lines: [line('right one', .55, .05), line('left two', .05, .15), line('left one', .05, .05), line('right two', .55, .15)] });
   assert.deepEqual(blocks.map(block => block.text), ['left one', 'left two', 'right one', 'right two']);
   const unit = { blocks }, rect = { left: 10, top: 20, width: 1000, height: 800 };

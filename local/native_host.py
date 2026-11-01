@@ -31,7 +31,8 @@ def receive(stream):
     value = json.loads(exact(stream, length))
     if not isinstance(value, dict):
         raise ValueError("Invalid reader request")
-    if value.get('method') != 'ocr' and length > 32000:
+    page_request = value.get('method') == 'prepare' or (value.get('method') == 'speech' and isinstance(value.get('payload'), dict) and 'preparation' in value['payload'])
+    if value.get('method') != 'ocr' and length > (96000 if page_request else 32000):
         raise ValueError("Choose a shorter reading.")
     return value
 
@@ -79,7 +80,7 @@ def run(origin, source=None, emit=send):
         raise ValueError("Connect the official Article Voice extension.")
     request = receive(source or sys.stdin.buffer)
     method = request.get("method")
-    if method not in ("heartbeat", "status", "voices", "speech", "ocr"):
+    if method not in ("heartbeat", "status", "voices", "speech", "ocr", "prepare"):
         raise ValueError("Unknown reader request")
     if method == "heartbeat":
         write_json(DIRECTORY / "chrome-connection.json", {"protocolVersion": 1,
@@ -97,11 +98,21 @@ def run(origin, source=None, emit=send):
         with HTTP.open(f"http://127.0.0.1:{port}/voices", timeout=10) as response:
             emit({"type": "result", "value": json.load(response)})
         return
+    if method == 'prepare':
+        payload = request.get('payload')
+        if not isinstance(payload, dict): raise ValueError('Invalid page text')
+        body = json.dumps({'text': payload.get('text')}, ensure_ascii=False).encode()
+        if len(body) > 96000: raise ValueError('This page contains too much text. Increase the book font size.')
+        query = Request(f'http://127.0.0.1:{port}/prepare', data=body, headers={'Content-Type': 'application/json'})
+        with HTTP.open(query, timeout=180) as response:
+            emit({'type': 'result', 'value': json.load(response)})
+        return
     payload = request.get("payload")
     if not isinstance(payload, dict):
         raise ValueError("Invalid speech request")
-    body = json.dumps({key: payload.get(key) for key in ("text", "voice", "language", "referenceId")}).encode()
-    if len(body) > 24000:
+    body = json.dumps({**{key: payload.get(key) for key in ("text", "voice", "language", "referenceId")},
+                       **({'preparation': payload['preparation']} if 'preparation' in payload else {})}, ensure_ascii=False).encode()
+    if len(body) > (96000 if 'preparation' in payload else 24000):
         raise ValueError("Choose a shorter passage.")
     query = Request(f"http://127.0.0.1:{port}/speech", data=body, headers={"Content-Type": "application/json"})
     try:

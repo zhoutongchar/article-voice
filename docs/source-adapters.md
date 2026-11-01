@@ -16,7 +16,7 @@ The factory receives the page document, URL, an abortable image recognizer, and 
 
 | Member | Responsibility |
 | --- | --- |
-| `id`, `capabilities` | Declare pagination, prefetch with visible-position restoration, scrolling support, and an optional preparation notice. |
+| `id`, `capabilities` | Declare pagination, prefetch with visible-position restoration, scrolling support, `format: 'ocr'` for image text, and an optional preparation notice. |
 | `open()` | Return the current reading unit. |
 | `current()`, `has(id)` | Own the current position and retained unit identities. |
 | `prepareNext(afterId, count)` | Prepare up to two following units and restore the displayed position before resolving. |
@@ -30,9 +30,13 @@ A unit has an opaque stable ID, title, URL, language, optional position label, a
 
 ## Shared queue
 
-`ReadingSession` prepares two future units with the same voice settings as the current unit. `WorkQueue` serializes actual voice requests and gives current playback priority over pending background work. Cached audio and already prepared engine results move into the current engine without generation being repeated. Speed remains a playback setting.
+`ReadingSession` retains up to two future units with the same voice settings as the current unit. OCR startup fetches one continuation page first; further acquisition runs in the background. `WorkQueue` serializes preparation and voice requests and gives current playback priority over pending background work. Cached audio and ready engine results move into the current engine without generation being repeated. Speed remains a playback setting.
 
-An adapter is asked to present the next unit only after the current audio completes. Pause stops automatic progression; Stop invalidates pending work and waits for source restoration. Voice/language changes discard prepared readings. A recognized external page/layout change replaces the source, discards its old queued units, and opens the visible page automatically. Playing resumes from the start of that visible page; a paused or stopped reader stays paused. Stop or Close during reconnection prevents late playback. Actual capture/navigation failures remain errors. Queue audio has a 128 MB budget; the source retains one previous image unit and two future units.
+For local OCR, `continuousUnit` joins an unfinished page tail with the following sentence before the LLM sees it. Original lines retain newlines, including wrap hyphens. The entire assembled reading window is prepared once, then split into speech pieces at sentence boundaries where possible. A consumed-prefix ledger prevents that continuation from being voiced again on its original page. Committed narration is never rewritten when later pages arrive. This uses the available lookahead, not unlimited book context; very long continuations can exceed that window.
+
+Prepared words retain their original page/block coordinates. The session presents a continued page when its first measured word begins, briefly pausing audio while the source completes navigation. Other sources present the next unit after the current audio completes. Streaming mode requires the next unit's first piece, rather than its entire audio, before advancing. A promoted background engine is cancelled after its ready audio is transferred.
+
+Pause stops automatic progression; Stop invalidates pending work and waits for source restoration. Voice/language changes discard prepared readings. A recognized external page/layout change replaces the source, discards its old queued units, and opens the visible page automatically. Playing resumes from the start of that visible page; a paused or stopped reader stays paused. Stop or Close during reconnection prevents late playback. Actual capture/navigation failures remain errors. Queue audio has a 128 MB budget; the source retains one previous image unit and two future units.
 
 ## Implementations
 
@@ -62,6 +66,8 @@ Avoid declaring prefetch support until the adapter can prepare units while resto
 Run `npm run check`, the Python boundary suite, and `npm run mac:check`. Build the OCR executable with `swift build --package-path macos -c release --product ArticleVoiceOCR`.
 
 Run `npm run dev`, open `http://127.0.0.1:4317/tests/source.html`, and choose **Run adapter checks**. This uses the production Kindle adapter, actual Apple Vision OCR, and explicitly labelled recorded speech. It checks queued units, source restoration, word marks, 3×, page completion, pause, stop, and cleanup. Add `?local=1` to use real Qwen through the app-managed engine. This fixture is not the Amazon website and does not establish live Kindle compatibility.
+
+Use `?local=1&fresh=1&continuous=1` for the real OCR/LLM/speech continuation fixture. It puts `re-` on one page and `markable` on the next, then checks reconstruction, measured page presentation and no duplicate continuation speech. Development-only `&port=4326` selects a separate test engine.
 
 The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. It also revokes decoded image URLs, binds navigation to container mouse press/release, and refuses more navigation while a delayed loading indicator remains after the new image appears. This checks restoration against Kindle's readiness boundary as well as the gesture boundary.
 

@@ -36,8 +36,10 @@ export function ocrBlocks(value) {
         || (line.box.x > edge + height * .5 && /[.!?。！？”"]$/.test(previous.text))) {
         block = { text: '', words: [] }; blocks.push(block);
       }
+      // Keep visual line breaks until page preparation. A space would erase
+      // the evidence that a trailing hyphen split a word across two lines.
       const offset = block.text.length + (block.text ? 1 : 0);
-      block.text += (block.text ? ' ' : '') + line.text;
+      block.text += (block.text ? '\n' : '') + line.text;
       block.words.push(...line.words.map(word => ({ ...word, start: word.start + offset, end: word.end + offset })));
       previous = line;
     }

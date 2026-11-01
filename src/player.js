@@ -8,7 +8,7 @@ import { ReadingSession } from './reading-session.js';
 import { parseVoice, PREVIEW_TEXT } from './voices.js';
 import { playerPreferences } from './preferences.js';
 
-export async function startPlayer({ transport = bridge, generate, cache, audio, loadVoices = providerVoices } = {}) {
+export async function startPlayer({ transport = bridge, generate, prepare, cache, audio, loadVoices = providerVoices } = {}) {
   const $ = id => document.getElementById(id);
   const time = value => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
   const savedSettings = await transport.settings();
@@ -32,14 +32,14 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
       ? `${passages} · ${queueState.queued} pages ready${queueState.preparing ? '…' : ''}` : passages;
     $('coverage').title = session?.unit?.label || '';
   }
-  const engine = new ReaderEngine({ audio: audio || $('audio'), generate, cache,
+  const engine = new ReaderEngine({ audio: audio || $('audio'), generate, prepare, cache,
     onHighlight: value => send({ type: 'highlight', value }),
     onUpdate: state => {
       latestState = state; session?.observe(state);
       const labels = { idle: settings.voiceId ? 'Ready to listen' : 'Choose your voice in Settings',
         buffering: 'Preparing your voice…', playing: 'Reading · pitch preserved', paused: 'Paused',
         generating: 'Generating the article…', ended: 'Finished · play to listen again', error: 'Reading stopped' };
-      $('status').textContent = labels[state.state];
+      $('status').textContent = state.state === 'buffering' && state.preparingText ? 'Preparing this page…' : labels[state.state];
       showCoverage();
       $('play').setAttribute('aria-label', state.state === 'playing' || state.state === 'buffering' ? 'Pause reading' : 'Play article');
       $('play-icon').textContent = state.state === 'playing' || state.state === 'buffering' ? 'Ⅱ' : '▶';
@@ -210,7 +210,7 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
           toggleSettings(true); throw new Error('Choose a voice in Settings first.');
         }
         $('error').hidden = true; preview.stop();
-        await engine.seekWord(position);
+        await session.seekWord(position);
       } catch (error) { report(error); }
     });
     // Load current reference identities before looking up cached local audio.

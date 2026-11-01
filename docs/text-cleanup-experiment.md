@@ -7,6 +7,12 @@ unfamiliar formatting and ordinary prose all use the same prompt. An in-memory
 cache reuses preparation for an identical passage; cached audio skips synthesis
 and preparation entirely.
 
+Starting with 0.7.1, OCR preparation happens before speech chunking. It receives
+the full visible page plus an available continuation for an unfinished tail.
+Recognized line breaks remain available to the model, so it can join wrapped
+words. Later pages consume that joined prefix once. Narration already committed
+to audio is not rewritten. See [the continuous reading queue](source-adapters.md#shared-queue).
+
 ## Pipeline
 
 1. The source adapter extracts text and retains its original page coordinates.
@@ -46,6 +52,14 @@ old audio cache keys. Reference voices and playback speed are unchanged. Source
 text and model responses remain local; model setup only downloads public files.
 The formatter holds at most 128 prepared passages in memory and exits with the
 app-managed voice engine.
+
+The `/prepare` operation accepts a reading window of up to 12,000 UTF-16 code
+units. It returns accepted text and its original-source projection. Speech pieces
+carry an identity and exact prepared-text range; the runtime verifies the slice
+and skips repeated inference. The original window also permits cache restoration
+after the idle engine exits. An incompatible restoration requires reopening,
+rather than silently narrating different prepared text. Ordinary HTML speech
+requests continue to use their full requested passage.
 
 ## Compare original and prepared speech
 
@@ -96,3 +110,19 @@ Python boundary checks cover inference for every unmarked passage, content and
 literal changes, caching, cancellation and incomplete output. JavaScript checks
 cover UTF-16 mapping, insertions/deletions, source coverage and word alignment.
 Clean-machine installation and every website/language remain unverified.
+
+The continuous OCR browser fixture passed with actual Apple Vision, Qwen3 LLM,
+Qwen3-TTS and forced alignment. It repaired `re-` / `markable` across two page
+images, presented the next page at the measured word, then skipped the consumed
+prefix. On the test Mac, one run started in 4.17 seconds; its speech pieces took
+0.92–1.59 seconds for synthesis and 0.05–0.07 seconds for alignment. A separate
+987-character window took 0.86 seconds to prepare. These are warm-engine samples,
+not a controlled before/after benchmark or a guarantee at 3x. Physical navigation
+and cold model loading add latency. Live Amazon Kindle was not rerun for this
+change.
+
+The installed 0.7.1 native host also passed full-window preparation followed by
+verified prepared-piece speech, returning measured words and framed audio. Its
+first speech request took 5.51 seconds, then 2.61 seconds for a warm repeat of the
+same prepared text (fresh synthesis, not audio-cache replay). This illustrates
+the remaining cold-start cost; the LLM is not the dominant stage in that sample.

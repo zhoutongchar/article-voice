@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from runtime import CONFIG, SpeechRuntime
 from streaming import PROTOCOL, RemoteRuntime, aligned_events
+from text_cleanup import MAX_TEXT, utf16_length
 
 HOST = f"127.0.0.1:{CONFIG['port']}"
 INSTANCE = None
@@ -106,31 +107,31 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.permitted():
             return
-        if self.path not in ("/speech", "/speech/stream"):
+        if self.path not in ("/speech", "/speech/stream", "/prepare"):
             self.reply(404, {"error": "Unknown endpoint"})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 32000 or self.headers.get_content_type() != "application/json":
+            if not 0 < length <= (32000 if self.path == '/speech/stream' else 96000) or self.headers.get_content_type() != "application/json":
                 raise ValueError("Expected a short JSON passage")
             request = json.loads(self.rfile.read(length))
-            text, voice, language = request.get("text"), request.get("voice"), request.get("language", "")
-            prepare = request.get("prepare", True)
-            if type(prepare) is not bool:
-                raise ValueError("Invalid preparation mode")
-            if not isinstance(text, str) or not text.strip() or len(text) > 2500:
-                raise ValueError("Choose a passage of 1–2500 characters")
-            if voice not in {v["id"] for v in CONFIG["voices"]}:
-                raise ValueError("Choose an available local voice")
-            if not isinstance(language, str) or (language and language not in CONFIG["languages"]):
-                raise ValueError("This language is not supported by local Qwen")
+            if self.path == '/prepare':
+                text = request.get('text')
+                if not isinstance(text, str) or not text.strip() or utf16_length(text) > MAX_TEXT:
+                    raise ValueError('Invalid page text')
+                voice = language = None
+            else:
+                self.speech_request(request)
+                text, voice, language = request['text'], request['voice'], request.get('language', '')
+            prepare = request.get('prepare', True)
         except (ValueError, TypeError, AttributeError):
-            self.reply(400, {"error": "Invalid passage, voice or language"})
+            self.reply(400, {"error": "Invalid page, passage, voice or language"})
             return
-        reference = runtime.reference_identity(voice)
-        if reference is None or request.get("referenceId") != reference:
-            self.reply(409, {"error": "Reconnect the local voice to use its current reference recording"})
-            return
+        if self.path != '/prepare':
+            reference = runtime.reference_identity(voice)
+            if reference is None or request.get("referenceId") != reference:
+                self.reply(409, {"error": "Reconnect the local voice to use its current reference recording"})
+                return
         if not slots.acquire(blocking=False):
             self.reply(429, {"error": "Local reader is busy. Try again shortly."})
             return
@@ -138,7 +139,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/speech/stream":
             self.stream(text, voice, language, cancelled, prepare)
             return
-        future = worker.submit(runtime.generate, text, voice, language, cancelled, **({} if prepare else {"prepare": False}))
+        options = {**({} if prepare else {'prepare': False}), **({'preparation': request['preparation']} if 'preparation' in request else {})}
+        future = worker.submit(runtime.prepare, text, cancelled) if self.path == '/prepare' else worker.submit(runtime.generate, text, voice, language, cancelled, **options)
         future.add_done_callback(lambda _: slots.release())
         try:
             while True:
@@ -147,15 +149,25 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(200, result)
                     return
                 except TimeoutError:
-                    readable, _, _ = select.select([self.connection], [], [], 0)
-                    if readable and not self.connection.recv(1, socket.MSG_PEEK):
+                    if self.disconnected():
                         cancelled.set()
                         future.cancel()
                         return
         except Exception as error:
-            # Full traces belong in the local terminal; no article is printed.
-            print(f"Local speech failed: {type(error).__name__}: {error}", flush=True)
-            self.reply(500, {"error": "Local speech failed. Check the companion terminal."})
+            print(f"Local speech failed: {type(error).__name__}", flush=True)
+            self.reply(400 if isinstance(error, ValueError) else 500, {"error": str(error) if isinstance(error, ValueError) else "Local speech failed. Check the companion terminal."})
+
+    def speech_request(self, request):
+        text, voice, language = request.get("text"), request.get("voice"), request.get("language", "")
+        prepare = request.get("prepare", True)
+        if type(prepare) is not bool:
+            raise ValueError("Invalid preparation mode")
+        if not isinstance(text, str) or not text.strip() or len(text) > 2500:
+            raise ValueError("Choose a passage of 1–2500 characters")
+        if voice not in {v["id"] for v in CONFIG["voices"]}:
+            raise ValueError("Choose an available local voice")
+        if not isinstance(language, str) or (language and language not in CONFIG["languages"]):
+            raise ValueError("This language is not supported by local Qwen")
 
     def disconnected(self):
         readable, _, _ = select.select([self.connection], [], [], 0)

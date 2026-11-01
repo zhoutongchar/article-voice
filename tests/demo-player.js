@@ -1,8 +1,10 @@
 import { startPlayer } from '../src/player.js';
 import { synthesize, listVoices } from '../src/cartesia.js';
-import { LOCAL_CONFIG, localSynthesize, localVoices } from '../src/local.js';
+import { LOCAL_CONFIG, localSynthesize, localVoices, localPrepareText } from '../src/local.js';
+import { prepareReadingUnit } from '../src/reading-preparation.js';
 const managedApp = new URL(location.href).searchParams.has('app');
-const appFetch = (url, options) => fetch(String(url).replace('127.0.0.1:4318', '127.0.0.1:4324'), options);
+const testPort = new URL(location.href).searchParams.get('port') === '4326' ? '4326' : '4324';
+const appFetch = (url, options) => fetch(String(url).replace('127.0.0.1:4318', `127.0.0.1:${testPort}`), options);
 const live = new URL(location.href).searchParams.has('live');
 const local = new URL(location.href).searchParams.has('local');
 const config = live ? await (await fetch('/test/config')).json() : null;
@@ -60,7 +62,15 @@ const fixtureVoiceList = async (_key, { query = '', gender = '', language = '' }
     && query.toLowerCase().split(/\s+/).every(term => `${v.name} ${v.description}`.toLowerCase().includes(term))), cursor: null
 });
 const freshCache = new URL(location.href).searchParams.has('fresh') ? new Map() : null;
+window.localCalls = [];
+const appGenerate = async (text, settings, signal) => {
+  const started = performance.now();
+  const result = await localSynthesize(text, settings, signal, appFetch);
+  window.localCalls.push({ text, preparation: result.preparation, timings: result.timings, wall: (performance.now() - started) / 1000 });
+  return result;
+};
 window.testPlayer = await startPlayer({ transport, cache: freshCache ? { get: async key => freshCache.get(key), set: async (key, value) => freshCache.set(key, value), clear: async () => freshCache.clear() } : undefined,
-  generate: local ? managedApp ? (text, settings, signal) => localSynthesize(text, settings, signal, appFetch) : undefined : live ? liveGenerate : fixtureGenerate,
+  prepare: local && managedApp ? (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, (text, signal) => localPrepareText(text, signal, appFetch)) : undefined,
+  generate: local ? managedApp ? appGenerate : undefined : live ? liveGenerate : fixtureGenerate,
   loadVoices: local ? managedApp ? (key, options) => localVoices(key, options, appFetch) : undefined : live ? (key, options) => listVoices(key, options, (url, request) => fetch(`/test/live-voices${url.search}`, { signal: request.signal })) : fixtureVoiceList });
 if (!live && !local) document.getElementById('voice-description').textContent = 'Recorded browser test voices. This fixture repeats sample audio; use the local reader for real narration.';
