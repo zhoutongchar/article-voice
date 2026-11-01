@@ -14,7 +14,7 @@ After setup, the Mac setup window can be closed or the app quit. Chrome starts t
 
 ### GitHub preview and store distribution
 
-The older [GitHub preview release](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1) distributes the app ZIP and extension ZIP before full-passage preparation; current source builds include the formatter. It is ad-hoc signed and unnotarized. A published Chrome Web Store listing and a Developer ID signing identity are not available. Connect it once by loading its `Contents/Resources/ChromeExtension` directory with Chrome's **Load unpacked** action. The built app includes this directory. Chrome Developer mode must remain enabled. See the root README for the complete installation steps and macOS opening guidance.
+The [GitHub preview release](https://github.com/zhoutongchar/article-voice/releases/tag/v0.8.1) distributes the app ZIP and extension ZIP, including optional full-passage formatting, Kindle OCR and default alignment prefetch. It is ad-hoc signed and unnotarized. A published Chrome Web Store listing and a Developer ID signing identity are not available. Connect it once by loading its `Contents/Resources/ChromeExtension` directory with Chrome's **Load unpacked** action. The built app includes this directory. Chrome Developer mode must remain enabled. See the root README for the complete installation steps and macOS opening guidance.
 
 For a future store release, upload `macos/build/Article Voice Chrome.zip` to the Chrome Web Store. Use the listing's extension ID and public key in `chrome/connection.json`, and set its HTTPS `storeUrl`. The ID must match that public key. The app's Connect Chrome button then opens the real listing. Chrome still requires the user to approve installation.
 
@@ -28,6 +28,13 @@ is enabled by default; turning it off passes content through unchanged.
 Post-inference checks accept formatting repairs or retain the original content.
 See [pipeline contracts](../docs/pipeline.md) for the versioned data shapes,
 independent caches, cancellation and resource scheduling.
+
+The bundled voice engine enables alignment prefetch by default: new paragraph
+audio gets measured word timings before the next speech job begins. This lowers
+first-playable latency in the measured fixtures, with slightly slower total
+generation. The standalone engine supports `--no-prefetch-alignment`; a reused
+upstream endpoint keeps its own setting. The backend health response exposes
+`alignmentPrefetch`, including an explicit unknown for older upstream engines.
 
 - The app registers `com.articlevoice.chrome` in the user's Chrome NativeMessagingHosts directory, restricted to the configured extension ID. An existing changed manifest is backed up before replacement.
 - Chrome's native host is a small executable inside the app. It runs the bundled Python runtime and supports heartbeat, status, voice catalog, OCR and separate format, synthesis and alignment operations. Legacy combined operations remain adapters. It does not expose a general command interface.

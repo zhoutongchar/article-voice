@@ -59,6 +59,7 @@ class RemoteRuntime:
     def __init__(self, port):
         self.base = f"http://127.0.0.1:{port}"
         self.ready = False
+        self.alignment_prefetch = None
         self._voices = []
         self._http = build_opener(ProxyHandler({}))
 
@@ -72,6 +73,8 @@ class RemoteRuntime:
         health = self._request("/health")
         if not health.get("ready") or any(health.get(key) != CONFIG[key] for key in ("model", "revision", "pipeline")):
             raise ValueError("Existing Qwen service is not ready or compatible")
+        reported = health.get('alignmentPrefetch')
+        self.alignment_prefetch = reported if isinstance(reported, bool) else None
         catalog = self._request("/voices")
         if any(catalog.get(key) != CONFIG[key] for key in ("model", "revision", "pipeline")):
             raise ValueError("Existing Qwen catalog is incompatible")

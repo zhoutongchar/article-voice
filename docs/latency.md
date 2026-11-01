@@ -34,9 +34,9 @@ seconds; the speech model's first internal PCM packet arrived in 0.31–0.48 sec
 These are not playable paragraphs yet. The player waits for complete paragraph
 audio and measured alignment. Fresh speech generation dominates the time.
 
-## Alignment prefetch is the best backend-only candidate tested
+## Alignment prefetch is the backend default in 0.8.1
 
-Optional prefetch completes alignment immediately after creating new audio,
+Prefetch completes alignment immediately after creating new audio,
 before another speech job takes the GPU. The extension still makes its normal,
 independent alignment request, which now hits the native cache. Artifact and
 transport contracts stay unchanged.
@@ -60,8 +60,9 @@ memory and must not be added together. Core model loading took 1.93 seconds
 separately; the first process-run pipeline took 7.10 seconds to first playable.
 This was not a clean-machine or cold-disk test.
 
-Prefetch remains **opt-in** because steady generation speed matters at 3×. Raw
-model token speed is unchanged. An optional prefetch failure preserves valid
+Version 0.8.1 enables prefetch by default to favor earlier playback. Steady
+generation speed still matters at 3×; standalone engines can opt out with
+`--no-prefetch-alignment`. Raw model token speed is unchanged. A prefetch failure preserves valid
 audio; the explicit alignment stage owns its error. Cancellation prevents late
 results while preserving reusable audio artifacts.
 
@@ -119,10 +120,19 @@ The harness does not change the installed app, browser preferences, models or
 production audio cache. Stop other speech work before measuring; the harness
 does not stop an arbitrary active engine. Repetitions are bounded to 1–3.
 
-The backend experiment is enabled with `local/server.py --prefetch-alignment`.
-The app's default startup does not enable it. An updated/restarted backend is
-needed, **no extension reload**. Enable it on the engine itself when using a gateway.
+The backend enables prefetch by default, including the app's normal startup.
+`local/server.py --prefetch-alignment` explicitly enables it and
+`--no-prefetch-alignment` disables it. An updated/restarted backend is needed,
+**no extension reload** for this scheduling change. A gateway leaves scheduling
+to its upstream engine and reports that engine's setting in `/health`; a missing
+upstream field remains unknown. Existing independent endpoints are not restarted
+or reconfigured by the app.
 
-Validation passed 76 JavaScript and 47 Python tests, including HTTP artifact
-contracts, cache warming, queued speech ownership, cancellation and alignment
-failure. Browser/Kindle behavior was outside this headless investigation.
+The original investigation passed 76 JavaScript and 47 Python tests, including
+HTTP artifact contracts, cache warming, queued speech ownership, cancellation and
+alignment failure. The 0.8.1 default change passed 76 JavaScript, 49 Python and
+48 native checks. Its installed native host started the packaged engine without
+an enabling flag, produced fresh real-model speech and hit the alignment cache
+on the first explicit alignment call. A real gateway forwarded speech and
+reported the upstream setting. Browser/Kindle behavior was outside this headless
+investigation; prior installed 0.8.0 playback evidence is recorded separately.

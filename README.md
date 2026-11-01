@@ -2,9 +2,9 @@
 
 Listen to Chrome articles with natural voices running on your Mac. Follow the spoken word on the original page, click any word to seek, and listen at **0.5×–3×** with pitch preserved.
 
-**[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1)** · [Mac app architecture and build](macos/README.md)
+**[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.8.1)** · [Mac app architecture and build](macos/README.md)
 
-The `main` source now includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. The 0.8.0 source uses versioned [pipeline contracts](docs/pipeline.md), optional text formatting, independent speech/alignment caches and bounded stage scheduling. These changes are newer than the linked 0.5.1 binary preview. Current builds install 3.61 GB of core model files and download a further 0.99 GB on first enabled formatter use. YouTube transcript support is a future adapter.
+The 0.8.1 preview includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. Versioned [pipeline contracts](docs/pipeline.md) support optional text formatting, independent speech/alignment caches and bounded stage scheduling. Alignment prefetch is enabled by default so word timings are ready before another paragraph takes the GPU. Current builds install 3.61 GB of core model files and download a further 0.99 GB on first enabled formatter use. YouTube transcript support is a future adapter.
 
 ![Article Voice's thin audio player](docs/images/minimal-player.png)
 
@@ -98,9 +98,22 @@ The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a git
 
 For headless performance measurements from assembled synthetic content, see the
 [pipeline latency investigation](docs/latency.md). It compares chunk concurrency,
-speech batching and optional backend alignment prefetch without changing Chrome.
+speech batching and backend alignment prefetch without changing Chrome. Prefetch
+is enabled by default in 0.8.1; standalone engines can opt out with
+`--no-prefetch-alignment`. It improves first-playable latency in the measured
+fixtures, with a small total-generation slowdown; it does not increase model
+token throughput or guarantee gapless 3× playback.
 
 ## Verification
+
+The 0.8.1 release passed **76 JavaScript tests, 49 Python tests and 48 native
+checks**, plus bundle signature and archive integrity checks. After installation,
+the native host started the packaged engine normally, with no enabling flag;
+health reported alignment prefetch enabled. Fresh real-model speech returned
+valid audio and the first explicit alignment request hit the prefetched cache.
+A real gateway startup forwarded speech and reported the upstream setting.
+The browser playback evidence below is from 0.8.0; a full Kindle run was not
+repeated for this scheduling-only release.
 
 The 0.8.0 contract refactor passes **76 JavaScript tests, 44 Python tests and 48 native checks**. Draft 2020-12 schemas and examples validate, and the published TypeScript declarations pass strict checking. Real-model Chrome fixtures exercised formatter-disabled playback with no formatter weights present, whole-window OCR formatting with a cross-page word, source highlighting, sentence-boundary playback and seeking. An ordinary HTTP page also passed the three-layout, whole-article and ten-second scroll checks. The installed 0.8.0 Chrome sample also passed playback, original-source highlighting, paragraph progression, formatter bypass and 3×. Resumed live Kindle testing at 3× verified automatic page turns with continued source highlighting, pause/resume and Stop clearing marks. A buffering wait occurred at a page boundary; gapless playback is not established. See [pipeline verification](docs/pipeline.md#verification-scope) for the distinction between browser fixtures, native transport and installed-extension coverage.
 

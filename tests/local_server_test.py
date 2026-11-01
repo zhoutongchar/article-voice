@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local"))
 from server import Handler, ThreadingHTTPServer, runtime
 import server as service
+from streaming import RemoteRuntime
 
 
 class ServerBoundaryTests(unittest.TestCase):
@@ -38,6 +39,30 @@ class ServerBoundaryTests(unittest.TestCase):
         status, _, body = self.request("GET", "/voices")
         self.assertEqual(status, 200)
         self.assertEqual(len(json.loads(body)["voices"]), 9)
+
+    def test_alignment_prefetch_defaults_on_and_can_be_disabled_for_local_engines(self):
+        self.assertTrue(service.parse_arguments([]).prefetch_alignment)
+        self.assertFalse(service.parse_arguments(['--no-prefetch-alignment']).prefetch_alignment)
+        # A gateway must still start with defaults, while the upstream owns scheduling.
+        self.assertEqual(service.parse_arguments(['--port', '4324', '--upstream-port', '4318']).upstream_port, 4318)
+        status, _, body = self.request('GET', '/health')
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)['alignmentPrefetch'])
+        with patch.object(service, 'PREFETCH_ALIGNMENT', False):
+            _, _, body = self.request('GET', '/health')
+            self.assertFalse(json.loads(body)['alignmentPrefetch'])
+
+    def test_gateway_reports_the_upstream_setting_without_claiming_an_unknown_default(self):
+        remote = RemoteRuntime(4318)
+        catalog = {'voices': [{**voice, 'referenceId': 'a' * 64} for voice in service.CONFIG['voices']],
+                   **{key: service.CONFIG[key] for key in ('model', 'revision', 'pipeline')}}
+        for reported in (True, False, None):
+            health = {'ready': True, **{key: service.CONFIG[key] for key in ('model', 'revision', 'pipeline')}}
+            if reported is not None: health['alignmentPrefetch'] = reported
+            with patch.object(remote, '_request', side_effect=[health, catalog]): remote.load()
+            with patch.object(service, 'runtime', remote):
+                _, _, body = self.request('GET', '/health')
+                self.assertIs(json.loads(body)['alignmentPrefetch'], reported)
 
     def test_other_sites_and_hosts_cannot_submit_articles_or_read_audio(self):
         for headers in ({"Origin": "https://unrelated.example"}, {"Host": "unrelated.example"}, {"Origin": "null"}):

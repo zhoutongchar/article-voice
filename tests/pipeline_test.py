@@ -160,7 +160,7 @@ class PipelineTests(unittest.TestCase):
                 connection.request('POST', '/pipeline/' + path, json.dumps(body), {'Content-Type': 'application/json'})
                 response = connection.getresponse(); result = response.status, json.loads(response.read()); connection.close(); return result
             try:
-                with patch.object(server, 'runtime', runtime), patch.object(server, 'PREFETCH_ALIGNMENT', True):
+                with patch.object(server, 'runtime', runtime):
                     status, result = post('format', {'content': original(), 'enabled': False})
                     self.assertEqual(status, 200); self.assertEqual(result['status'], 'bypassed')
                     request = spoken(); reference = runtime.reference_identity('Ryan')

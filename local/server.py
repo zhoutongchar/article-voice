@@ -19,7 +19,7 @@ from stage_executor import StageExecutor
 
 HOST = f"127.0.0.1:{CONFIG['port']}"
 INSTANCE = None
-PREFETCH_ALIGNMENT = False
+PREFETCH_ALIGNMENT = True
 gpu = StageExecutor()
 runtime = SpeechRuntime(executor=gpu)
 worker = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pipeline")
@@ -90,6 +90,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self.reply(200, {"ready": runtime.ready, "streaming": PROTOCOL,
                              "instance": INSTANCE, "contractVersion": 1, "formatterLoaded": getattr(runtime, "formatter_loaded", None),
+                             "alignmentPrefetch": runtime.alignment_prefetch if isinstance(runtime, RemoteRuntime) else PREFETCH_ALIGNMENT,
                              **{key: CONFIG[key] for key in ("model", "revision", "pipeline")}})
         elif path == "/voices":
             self.reply(200, {"voices": runtime.catalog(), "cursor": None,
@@ -184,7 +185,7 @@ class Handler(BaseHTTPRequestHandler):
                     if runtime.reference_identity(voice) != request.get('referenceId'):
                         self.reply(409, {'error': 'Reconnect your voice reference.', 'code': 'REFERENCE_CHANGED', 'stage': 'synthesize', 'retryable': False}); return
                     operation = lambda cancelled: runtime.synthesize(chunk, voice, language, cancelled, priority,
-                        **({'prefetch_alignment': True} if PREFETCH_ALIGNMENT else {}))
+                        **({'prefetch_alignment': PREFETCH_ALIGNMENT} if isinstance(runtime, SpeechRuntime) else {}))
                 else:
                     sound = audio(request.get('audio'))
                     operation = lambda cancelled: runtime.align(chunk, sound, language, cancelled, priority)
@@ -275,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             future.cancel()
 
 
-if __name__ == "__main__":
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=CONFIG["port"])
     parser.add_argument("--data-dir")
@@ -284,14 +285,18 @@ if __name__ == "__main__":
     parser.add_argument("--models-dir")
     parser.add_argument("--idle-timeout", type=float, default=0)
     parser.add_argument("--no-formatter", action="store_true")
-    parser.add_argument('--prefetch-alignment', action='store_true', help='Experimental: warm alignment before starting another speech job')
-    args = parser.parse_args()
+    parser.add_argument('--prefetch-alignment', action=argparse.BooleanOptionalAction, default=True,
+                        help='Warm alignment before another speech job (default: enabled; configure on the upstream engine when using a gateway)')
+    args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
     if args.upstream_port is not None and (not 1 <= args.upstream_port <= 65535 or args.upstream_port == args.port):
         parser.error("upstream port must be a different loopback port between 1 and 65535")
-    if args.upstream_port and args.prefetch_alignment:
-        parser.error('Enable alignment prefetch on the upstream engine itself')
+    return args
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
     HOST = f"127.0.0.1:{args.port}"
     INSTANCE = args.instance_token
     PREFETCH_ALIGNMENT = args.prefetch_alignment
