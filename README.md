@@ -10,7 +10,7 @@ Listen to Chrome articles with natural voices running on your Mac. Follow the sp
 
 Requires **Apple Silicon, macOS 26 or later, and Google Chrome**. This preview has been exercised on an M5 Max with 36 GB RAM; smaller Macs have not been verified.
 
-1. Download **Article Voice.zip** from the release, unzip it, and open **Article Voice.app**.
+1. Download **Article-Voice.zip** from the release, unzip it, and open **Article Voice.app**.
 2. Click **Install Article Voice**. It installs into `~/Applications` and prepares the voices. The first setup downloads **3.61 GB** of model files, with progress, pause/resume, and checksum verification. Python and the speech runtime are included in the app.
 3. Click **Connect Chrome**. In `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the folder below. In the folder picker, **Command–Shift–G** lets you paste the path:
 
@@ -22,7 +22,7 @@ Requires **Apple Silicon, macOS 26 or later, and Google Chrome**. This preview h
 
 This is an **ad-hoc signed, unnotarized developer preview**. If macOS blocks opening it, review [Apple's instructions for opening a trusted downloaded app](https://support.apple.com/en-us/102445), including **System Settings → Privacy & Security → Open Anyway**. No Chrome Web Store listing is available. Chrome's [unpacked-extension installation](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked) requires Developer mode to remain enabled.
 
-The separate **Article Voice Chrome.zip** download contains the same extension for manual installation. Unzip it into a permanent folder and choose that folder with **Load unpacked**; the Mac app is still required for local voices. The app's bundled extension is the recommended preview setup.
+The separate **Article-Voice-Chrome.zip** download contains the same extension for manual installation. Unzip it into a permanent folder and choose that folder with **Load unpacked**; the Mac app is still required for local voices. The app's bundled extension is the recommended preview setup.
 
 ## Reading
 
