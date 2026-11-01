@@ -7,11 +7,13 @@ let package = Package(
     products: [
         .executable(name: "ArticleVoice", targets: ["ArticleVoice"]),
         .executable(name: "ArticleVoiceHost", targets: ["ArticleVoiceHost"]),
+        .executable(name: "ArticleVoiceOCR", targets: ["ArticleVoiceOCR"]),
         .executable(name: "ArticleVoiceSmoke", targets: ["ArticleVoiceSmoke"]),
         .executable(name: "ArticleVoiceCoreChecks", targets: ["ArticleVoiceCoreChecks"]),
     ],
     targets: [
         .executableTarget(name: "ArticleVoiceHost"),
+        .executableTarget(name: "ArticleVoiceOCR"),
         .target(name: "ArticleVoiceCore"),
         .executableTarget(name: "ArticleVoice", dependencies: ["ArticleVoiceCore"],
             exclude: ["FocusCapture.swift", "GlobalShortcut.swift", "ReadAlongView.swift", "ReaderModel.swift", "ReaderView.swift", "SelectionCopy.swift"]),

@@ -4,7 +4,7 @@ import { LOCAL_CONFIG } from './local.js';
 import { audioCache } from './cache.js';
 import { bridge } from './bridge.js';
 import { hasNative } from './native.js';
-import { splitPassages } from './article.js';
+import { ReadingSession } from './reading-session.js';
 import { parseVoice, PREVIEW_TEXT } from './voices.js';
 import { playerPreferences } from './preferences.js';
 
@@ -24,14 +24,23 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
   const send = message => transport.request(message).catch(report);
   const resize = () => transport.request({ type: 'resize', height: $('player').scrollHeight + 4, layout: settings.layout }).catch(() => {});
   const save = async value => { Object.assign(settings, value); await transport.save(value); };
+  let session, queueState = { queued: 0, preparing: false }, latestState;
+  function showCoverage() {
+    if (!latestState) return;
+    const passages = latestState.count ? `${latestState.generated}/${latestState.count} ready` : '';
+    $('coverage').textContent = session?.unit?.source?.pagination
+      ? `${passages} · ${queueState.queued} pages ready${queueState.preparing ? '…' : ''}` : passages;
+    $('coverage').title = session?.unit?.label || '';
+  }
   const engine = new ReaderEngine({ audio: audio || $('audio'), generate, cache,
     onHighlight: value => send({ type: 'highlight', value }),
     onUpdate: state => {
+      latestState = state; session?.observe(state);
       const labels = { idle: settings.voiceId ? 'Ready to listen' : 'Choose your voice in Settings',
         buffering: 'Preparing your voice…', playing: 'Reading · pitch preserved', paused: 'Paused',
         generating: 'Generating the article…', ended: 'Finished · play to listen again', error: 'Reading stopped' };
       $('status').textContent = labels[state.state];
-      $('coverage').textContent = state.count ? `${state.generated}/${state.count} ready` : '';
+      showCoverage();
       $('play').setAttribute('aria-label', state.state === 'playing' || state.state === 'buffering' ? 'Pause reading' : 'Play article');
       $('play-icon').textContent = state.state === 'playing' || state.state === 'buffering' ? 'Ⅱ' : '▶';
       $('elapsed').textContent = time(state.position / state.speed);
@@ -48,6 +57,18 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
       document.body.dataset.word = state.word;
       document.body.dataset.speed = String(state.speed);
     } });
+  session = new ReadingSession({ engine, transport, onError: report, onChange: value => {
+    queueState = value;
+    if (value.unit) {
+      article = value.unit; $('title').textContent = article.title; $('title').title = article.title;
+      document.body.dataset.unit = article.id || '';
+      const paged = !!article.source?.pagination;
+      $('mode').querySelector('[value="ahead"]').textContent = paged ? 'After this page is ready' : 'After the whole article is ready';
+      $('source-hint').textContent = article.source?.preparationNotice || '';
+      $('source-hint').hidden = !article.source?.preparationNotice;
+    }
+    showCoverage();
+  } });
   const preview = new ReaderEngine({ generate, cache,
     onUpdate: state => {
       const busy = ['playing', 'buffering'].includes(state.state);
@@ -55,8 +76,7 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
       if (state.error) report(new Error(state.error));
     } });
   function reload() {
-    if (article) engine.load(settings.provider === 'local'
-      ? { ...article, passages: splitPassages(article.blocks.map(text => ({ text })), 160) } : article, readingSettings());
+    if (article) session.load(article, readingSettings());
   }
   function setLayout(layout, persist = true) {
     if (!['minimal', 'compact', 'full'].includes(layout)) return;
@@ -107,15 +127,18 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
   for (const option of $('language').options) option.disabled = settings.provider === 'local' && !!option.value && !LOCAL_CONFIG.languages[option.value];
   for (const button of document.querySelectorAll('.view-switcher button')) button.onclick = () => setLayout(button.dataset.layout);
   $('settings-toggle').onclick = () => toggleSettings();
-  $('close').onclick = () => { clearInterval(followTimer); unsubscribe(); voiceAbort?.abort(); preview.stop(); engine.stop(); send({ type: 'close' }); };
+  $('close').onclick = async () => {
+    clearInterval(followTimer); unsubscribe(); voiceAbort?.abort(); preview.stop();
+    try { await session.stop(); } finally { send({ type: 'close' }); }
+  };
   $('play').onclick = async () => {
     $('error').hidden = true;
-    if (engine.wantsPlay) { engine.pause(); return; }
+    if (engine.wantsPlay) { session.pause(); return; }
     preview.stop();
     if (!canGenerate(readingSettings()) && !engine.segments[engine.index]?.result) { toggleSettings(true); report(new Error('Choose a voice in Settings first.')); return; }
-    await engine.play();
+    try { await session.play(); } catch (error) { report(error); }
   };
-  $('stop').onclick = () => { preview.stop(); engine.stop(); };
+  $('stop').onclick = () => { preview.stop(); session.stop(); };
   $('previous').onclick = () => engine.go(Math.max(0, engine.index - 1));
   $('next').onclick = () => engine.go(Math.min(engine.segments.length - 1, engine.index + 1));
   $('speed').value = String(settings.speed);
@@ -127,7 +150,7 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
   $('voice').onchange = chooseVoice;
   $('preview-voice').onclick = async () => {
     if (preview.wantsPlay) { preview.stop(); return; }
-    if (engine.wantsPlay) engine.pause();
+    if (engine.wantsPlay) session.pause();
     preview.load({ title: 'Voice preview', url: '', blocks: [PREVIEW_TEXT],
       passages: [{ block: 0, offset: 0, text: PREVIEW_TEXT }] }, { ...readingSettings(), speed: 1, mode: 'stream' });
     await preview.play();
@@ -171,6 +194,9 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
   try {
     unsubscribe = await transport.subscribe(async position => {
       if (position.type === 'follow-state') { showFollowPause(position.pausedUntil); return; }
+      if (position.type === 'source-changed') {
+        session.invalidate(); report(new Error('The page changed. Close the player and reopen it at your reading position.')); return;
+      }
       try {
         if (!canGenerate(readingSettings()) && !engine.segments.every(segment => segment.result)) {
           toggleSettings(true); throw new Error('Choose a voice in Settings first.');
@@ -190,8 +216,8 @@ export async function startPlayer({ transport = bridge, generate, cache, audio, 
   } catch (error) { $('title').textContent = 'Open a readable article'; report(error); }
   setLayout(settings.layout, false);
   new ResizeObserver(resize).observe($('player')); resize();
-  window.addEventListener('pagehide', () => { clearInterval(followTimer); unsubscribe(); voiceAbort?.abort(); preview.stop(); engine.stop(); }, { once: true });
-  return { engine, preview, getSettings: readingSettings, resize };
+  window.addEventListener('pagehide', () => { clearInterval(followTimer); unsubscribe(); voiceAbort?.abort(); preview.stop(); session.stop(); }, { once: true });
+  return { engine, session, preview, getSettings: readingSettings, resize };
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.id) startPlayer();

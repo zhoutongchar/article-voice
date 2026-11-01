@@ -3,9 +3,10 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 process.chdir(fileURLToPath(new URL('..', import.meta.url)));
 await mkdir('.cache', { recursive: true });
-await build({ entryPoints: ['tests/demo.js', 'tests/demo-player.js'], bundle: true, format: 'esm', outdir: '.cache', target: 'chrome120' });
+await build({ entryPoints: ['tests/demo.js', 'tests/demo-player.js', 'tests/source-demo.js'], bundle: true, format: 'esm', outdir: '.cache', target: 'chrome120' });
 async function getKey() {
   if (process.env.CARTESIA_API_KEY) return process.env.CARTESIA_API_KEY;
   try { return (await readFile('.env', 'utf8')).match(/^CARTESIA_API_KEY\s*=\s*["']?([^\r\n"']+)/m)?.[1]?.trim() || ''; }
@@ -17,6 +18,16 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   res.setHeader('Cache-Control', 'no-store');
   try {
+    if (req.method === 'POST' && url.pathname === '/test/ocr') {
+      if (req.headers.origin !== 'http://127.0.0.1:4317') { res.writeHead(403); res.end(); return; }
+      let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 12 * 1024 * 1024) throw new Error('Oversized image'); }
+      const child = spawn(resolve('macos/.build/release/ArticleVoiceOCR'), [], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const timer = setTimeout(() => child.kill(), 30_000);
+      res.on('close', () => { if (child.exitCode == null) child.kill(); });
+      child.on('error', () => { clearTimeout(timer); res.writeHead(503); res.end('Build ArticleVoiceOCR before this check.'); });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      child.stdout.pipe(res); child.on('close', () => clearTimeout(timer)); child.stdin.end(raw); return;
+    }
     if (req.method === 'GET' && url.pathname === '/test/config') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ liveAvailable: !!await getKey(), voiceId: process.env.CARTESIA_VOICE_ID || 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4' })); return;

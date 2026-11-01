@@ -4,6 +4,8 @@ Listen to Chrome articles with natural voices running on your Mac. Follow the sp
 
 **[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1)** · [Mac app architecture and build](macos/README.md)
 
+The `main` source now includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. These changes are newer than the linked 0.5.1 binary preview. YouTube transcript support is a future adapter.
+
 ![Article Voice's thin audio player](docs/images/minimal-player.png)
 
 ## Install the preview

@@ -80,3 +80,25 @@ test('player receives word clicks only from its own tab and removes its listener
   assert.equal(events.length, 2); assert.equal(events[1].pausedUntil, 1000);
   unsubscribe(); assert.equal(removed, true);
 });
+
+test('image recognition is restricted to a registered top-frame source and cancellation is scoped to the sender tab', async t => {
+  const { chrome, listeners } = backgroundChrome(); let receive, requests = 0, closed = 0;
+  chrome.runtime.connectNative = () => ({ onMessage: { addListener(fn) { receive = fn; } },
+    onDisconnect: { addListener() {} }, postMessage(message) { requests++; assert.equal(message.method, 'ocr'); }, disconnect() { closed++; } });
+  globalThis.chrome = chrome; t.after(() => { delete globalThis.chrome; }); registerBackground(chrome);
+  const sender = { id: 'test', frameId: 0, tab: { id: 7 }, url: 'https://read.amazon.com/?asin=book' };
+  const message = { type: 'source-ocr', id: 'ocr-one', payload: { image: 'fixture' } }; let result;
+  listeners.message(message, { ...sender, url: 'https://example.org/' }, () => {});
+  listeners.message(message, { ...sender, frameId: 1 }, () => {});
+  listeners.message(message, { ...sender, id: 'foreign' }, () => {});
+  assert.equal(requests, 0);
+  listeners.message(message, sender, value => result = value);
+  assert.equal(requests, 1);
+  listeners.message({ type: 'source-ocr-cancel', id: 'ocr-one' }, { ...sender, tab: { id: 8 } }, () => {});
+  assert.equal(closed, 0);
+  receive({ type: 'result', value: { lines: [] } }); await setImmediate();
+  assert.deepEqual(result, { ok: true, value: { lines: [] } }); assert.equal(closed, 1);
+  listeners.message({ ...message, id: 'ocr-two' }, sender, value => result = value);
+  listeners.message({ type: 'source-ocr-cancel', id: 'ocr-two' }, sender, () => {});
+  await setImmediate(); assert.equal(closed, 2); assert.equal(result.ok, false);
+});

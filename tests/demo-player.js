@@ -59,6 +59,8 @@ const fixtureVoiceList = async (_key, { query = '', gender = '', language = '' }
   voices: fixtureVoices.filter(v => (!gender || v.gender === gender) && (!language || v.language === language)
     && query.toLowerCase().split(/\s+/).every(term => `${v.name} ${v.description}`.toLowerCase().includes(term))), cursor: null
 });
-window.testPlayer = await startPlayer({ transport, generate: local ? managedApp ? (text, settings, signal) => localSynthesize(text, settings, signal, appFetch) : undefined : live ? liveGenerate : fixtureGenerate,
+const freshCache = new URL(location.href).searchParams.has('fresh') ? new Map() : null;
+window.testPlayer = await startPlayer({ transport, cache: freshCache ? { get: async key => freshCache.get(key), set: async (key, value) => freshCache.set(key, value), clear: async () => freshCache.clear() } : undefined,
+  generate: local ? managedApp ? (text, settings, signal) => localSynthesize(text, settings, signal, appFetch) : undefined : live ? liveGenerate : fixtureGenerate,
   loadVoices: local ? managedApp ? (key, options) => localVoices(key, options, appFetch) : undefined : live ? (key, options) => listVoices(key, options, (url, request) => fetch(`/test/live-voices${url.search}`, { signal: request.signal })) : fixtureVoiceList });
 if (!live && !local) document.getElementById('voice-description').textContent = 'Recorded browser test voices. This fixture repeats sample audio; use the local reader for real narration.';

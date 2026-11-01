@@ -9,7 +9,7 @@ export const bridge = {
   async subscribe(callback) {
     const { tabId } = await this.request({ type: 'identify' });
     const listener = (message, sender) => {
-      if (sender.id === chrome.runtime.id && ['seek-word', 'follow-state'].includes(message?.type) && message.tabId === tabId) callback(message);
+      if (sender.id === chrome.runtime.id && ['seek-word', 'follow-state', 'source-changed'].includes(message?.type) && message.tabId === tabId) callback(message);
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);

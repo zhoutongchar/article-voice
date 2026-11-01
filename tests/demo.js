@@ -9,7 +9,7 @@ function openReader(mode = 'fixture') {
     onRequest(handle, frame) {
     const listener = async event => {
       if (event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.channel !== 'article-voice-test') return;
-      try { event.source.postMessage({ id: event.data.id, ok: true, value: handle(event.data.message) }, location.origin); }
+      try { event.source.postMessage({ id: event.data.id, ok: true, value: await handle(event.data.message) }, location.origin); }
       catch (error) { event.source.postMessage({ id: event.data.id, ok: false, error: error.message }, location.origin); }
     };
     window.addEventListener('message', listener);

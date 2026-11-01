@@ -1,6 +1,9 @@
 import connection from '../chrome/connection.json' with { type: 'json' };
+import { nativeRequest } from './native.js';
+import { isImageSourceUrl } from './sources/registry.js';
 
 export function registerBackground(chrome) {
+  const recognitions = new Map();
   const heartbeatAlarm = 'article-voice-connection';
   // Liveness belongs to the background worker, not a reader tab: a cached clip
   // must not make a disabled or removed extension look connected indefinitely.
@@ -38,6 +41,20 @@ export function registerBackground(chrome) {
 
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
+    if (message?.type === 'source-ocr' || message?.type === 'source-ocr-cancel') {
+      if (!sender.tab?.id || sender.frameId !== 0 || !isImageSourceUrl(sender.url) || typeof message.id !== 'string' || message.id.length > 80) return;
+      const key = `${sender.tab.id}:${message.id}`;
+      if (message.type === 'source-ocr-cancel') { recognitions.get(key)?.abort(); reply({ ok: true }); return; }
+      if (recognitions.has(key)) { reply({ ok: false, error: 'This page is already being recognized.' }); return; }
+      const controller = new AbortController(); recognitions.set(key, controller);
+      nativeRequest('ocr', message.payload, controller.signal).then(value => reply({ ok: true, value }),
+        error => reply({ ok: false, error: error.message })).finally(() => recognitions.delete(key));
+      return true;
+    }
+    if (message?.type === 'source-changed' && sender.frameId === 0 && sender.tab?.id) {
+      chrome.runtime.sendMessage({ type: 'source-changed', tabId: sender.tab.id }).then(() => reply({ ok: true }), () => reply({ ok: false }));
+      return true;
+    }
     if (message?.type === 'follow-state' && sender.frameId === 0 && sender.tab?.id
       && Number.isFinite(message.pausedUntil) && message.pausedUntil >= 0) {
       chrome.runtime.sendMessage({ type: 'follow-state', tabId: sender.tab.id, pausedUntil: message.pausedUntil })

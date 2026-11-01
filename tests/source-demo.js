@@ -1,0 +1,113 @@
+import { mountReader } from '../src/content.js';
+import { createKindleSource } from '../src/sources/kindle.js';
+
+const pages = [
+  ['A quiet room waits at the end of the street.', 'Morning light moves across the table. There is time to notice it.'],
+  ['A bicycle passes the window. Someone waves hello.', 'The garden gate is open, and the path leads between the trees.'],
+  ['Paper lanterns move in the afternoon breeze.', 'A familiar voice turns another page. The story keeps its gentle rhythm.'],
+  ['The kettle begins to sing in the kitchen.', 'We put our books on the table and listen to the rain.'],
+  ['Evening arrives with warm windows and quiet streets.', 'There is another story waiting, whenever we are ready.']
+];
+let index = 0, reader, adapter;
+const output = document.getElementById('result');
+async function render() {
+  const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1000;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#faf9f5'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#172f24'; ctx.font = '48px Georgia';
+  let y = 180;
+  for (const paragraph of pages[index]) {
+    let line = '';
+    for (const word of paragraph.split(' ')) {
+      const next = line ? `${line} ${word}` : word;
+      if (ctx.measureText(next).width > 1350) { ctx.fillText(line, 100, y); y += 76; line = word; }
+      else line = next;
+    }
+    ctx.fillText(line, 100, y); y += 160;
+  }
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  const image = document.querySelector('#kr-renderer img'), previous = image.src;
+  image.src = URL.createObjectURL(blob); await image.decode();
+  // The production Kindle renderer revokes decoded image URLs immediately.
+  URL.revokeObjectURL(image.src);
+  if (previous.startsWith('blob:')) URL.revokeObjectURL(previous);
+  const location = document.getElementById('kr-scrubber-bar'); location.textContent = `Page ${index + 1}`; location.setAttribute('aria-label', `Page ${index + 1}`);
+  document.getElementById('kr-chevron-left').disabled = index === 0;
+  document.getElementById('kr-chevron-right').disabled = index === pages.length - 1;
+  document.body.dataset.page = String(index);
+}
+document.getElementById('kr-chevron-left').onclick = () => { if (index > 0) { index--; render(); } };
+document.getElementById('kr-chevron-right').onclick = () => { if (index < pages.length - 1) { index++; render(); } };
+await render();
+const recognize = async (image, signal) => {
+  const response = await fetch('/test/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image, language: 'en' }), signal });
+  const value = await response.json(); if (value.error) throw new Error(value.error); return value;
+};
+async function openReader() {
+  if (reader?.host.isConnected) return;
+  const local = new URL(location.href).searchParams.has('local');
+  if (local) document.getElementById('mode').textContent = 'Actual Apple Vision OCR and real local Qwen through the app-managed speech engine.';
+  adapter = createKindleSource({ document, url: new URL('https://read.amazon.com/?asin=public-test-book'), recognize,
+    onChange: () => reader?.frame.contentWindow.postMessage({ channel: 'article-voice-event', message: { type: 'source-changed' } }, location.origin) });
+  reader = mountReader({ sourceAdapter: adapter, openFrame: `/player.html${local ? `?local=1&app=1${new URL(location.href).searchParams.has('fresh') ? '&fresh=1' : ''}` : ''}`,
+    sendEvent: message => reader.frame.contentWindow.postMessage({ channel: 'article-voice-event', message }, location.origin),
+    onRequest(handle, frame) {
+      const listener = async event => {
+        if (event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.channel !== 'article-voice-test') return;
+        try { const value = await handle(event.data.message); event.source.postMessage({ id: event.data.id, ok: true, value }, location.origin); }
+        catch (error) { event.source.postMessage({ id: event.data.id, ok: false, error: error.message }, location.origin); }
+      };
+      window.addEventListener('message', listener); return () => window.removeEventListener('message', listener);
+    } });
+}
+document.getElementById('open-reader').onclick = openReader;
+const wait = async (predicate, message, timeout = 30_000) => {
+  const end = performance.now() + timeout;
+  while (performance.now() < end) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 30)); }
+  throw new Error(message);
+};
+document.getElementById('run-checks').onclick = async event => {
+  event.target.disabled = true;
+  const messages = [], pass = text => { messages.push(`PASS · ${text}`); output.textContent = messages.join('\n'); };
+  try {
+    await openReader();
+    await wait(() => reader.frame.contentWindow.testPlayer?.engine.segments.length, 'Initial OCR did not finish');
+    const win = reader.frame.contentWindow, player = win.testPlayer, $ = id => win.document.getElementById(id);
+    if (!player.engine.article.blocks.join(' ').includes('A quiet room waits')) throw new Error('Real Vision OCR did not return the book text');
+    pass('Kindle adapter reads an image through actual Apple Vision OCR');
+    $('speed').value = '3'; $('speed').dispatchEvent(new Event('change')); $('play').click();
+    await wait(() => player.engine.state === 'playing', 'Playback did not start');
+    await wait(() => document.querySelector('#article-voice-marks > div:last-child')?.childElementCount > 0, 'First word mark did not appear');
+    // These deliberately short fixture pages can finish before two future
+    // pages generate. Hold the first page to inspect the prepared queue, then
+    // resume for an actual audio-driven transition.
+    $('play').click(); await wait(() => player.engine.state === 'paused', 'Initial pause did not take effect');
+    await wait(() => player.session.future.size === 2 && [...player.session.future.values()].every(record => record.ready), 'Two future pages were not prepared');
+    await wait(() => !player.session.pending, 'Page preparation did not settle');
+    if (index !== 0 || document.querySelector('[data-article-voice-page]') || document.getElementById('main-content').inert) throw new Error('Prefetch did not restore the visible page');
+    pass('Two pages of text and speech queue ahead; the original page is restored');
+    await wait(() => document.querySelector('#article-voice-marks > div:last-child')?.childElementCount > 0, 'OCR word overlay is missing');
+    if (!$('follow').checked) throw new Error('Follow words is not available');
+    pass('Spoken words are marked over the image; Follow words remains available');
+    const first = player.session.unit.id;
+    $('play').click(); await wait(() => player.engine.state === 'playing', 'Playback did not resume');
+    await wait(() => player.session.unit.id !== first, 'Audio completion did not turn the page', 60_000);
+    $('play').click();
+    await wait(() => player.engine.state === 'paused', 'Pause did not take effect');
+    await wait(() => !player.session.pending, 'Refill did not settle');
+    if (index !== 1 || player.engine.speed !== 3 || !player.engine.segments[0].result) throw new Error('Page transition lost ready audio, position or speed');
+    const paused = player.session.unit.id;
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    if (player.session.unit.id !== paused) throw new Error('Pages changed while paused');
+    pass('Audio completion presents the next page with cached speech at 3×; Pause prevents further turns');
+    await player.session.stop();
+    if (player.session.future.size || document.getElementById('main-content').inert) throw new Error('Stop left work or controls locked');
+    await reader.cleanup();
+    if (document.getElementById('article-voice-marks') || document.querySelector('[data-article-voice-page]')) throw new Error('Close left source overlays');
+    pass('Stop and Close restore navigation and remove source marks');
+    document.body.dataset.sourceChecks = 'passed'; pass('SOURCE ADAPTER CHECKS PASSED');
+  } catch (error) {
+    try { await reader?.frame.contentWindow.testPlayer?.session.stop(); await reader?.cleanup(); } catch {}
+    messages.push(`FAIL · ${error.message}`); output.textContent = messages.join('\n'); document.body.dataset.sourceChecks = 'failed';
+  }
+  finally { event.target.disabled = false; }
+};

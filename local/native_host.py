@@ -3,11 +3,15 @@ import json
 import struct
 import sys
 import time
+import signal
+import subprocess
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request
 from companion import CONNECTION, DIRECTORY, HTTP, ensure_engine, health, write_json
 
 MAX_MESSAGE = 1024 * 1024
+MAX_OCR_REQUEST = 12 * 1024 * 1024
 
 
 def exact(stream, count):
@@ -22,12 +26,43 @@ def exact(stream, count):
 
 def receive(stream):
     length = struct.unpack("=I", exact(stream, 4))[0]
-    if not 0 < length <= 32000:
+    if not 0 < length <= MAX_OCR_REQUEST:
         raise ValueError("Choose a shorter reading.")
     value = json.loads(exact(stream, length))
     if not isinstance(value, dict):
         raise ValueError("Invalid reader request")
+    if value.get('method') != 'ocr' and length > 32000:
+        raise ValueError("Choose a shorter reading.")
     return value
+
+
+def recognize(payload):
+    if not isinstance(payload, dict) or not isinstance(payload.get('image'), str) or len(payload['image']) > 11_184_812:
+        raise ValueError('This page image is too large. Try a smaller reader window.')
+    executable = Path(__file__).resolve().parents[2] / 'MacOS' / 'ArticleVoiceOCR'
+    if not executable.is_file():
+        executable = Path(__file__).resolve().parents[1] / 'macos' / '.build' / 'release' / 'ArticleVoiceOCR'
+    if not executable.is_file():
+        raise ValueError('Update Article Voice on this Mac to enable image reading.')
+    body = json.dumps({'image': payload['image'], 'language': payload.get('language', '')}).encode()
+    previous = signal.getsignal(signal.SIGTERM)
+    def terminate(*_): raise SystemExit(143)
+    with subprocess.Popen([str(executable)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+        signal.signal(signal.SIGTERM, terminate)
+        try:
+            output, _ = child.communicate(body, timeout=30)
+            if len(output) > MAX_MESSAGE:
+                raise ValueError('This page contains too much text. Increase the book font size.')
+            value = json.loads(output)
+            if child.returncode or value.get('error'):
+                raise ValueError(value.get('error') or 'This page could not be recognized.')
+            return value
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                try: child.wait(timeout=2)
+                except subprocess.TimeoutExpired: child.kill(); child.wait()
+            signal.signal(signal.SIGTERM, previous)
 
 
 def send(value, stream=None):
@@ -44,7 +79,7 @@ def run(origin, source=None, emit=send):
         raise ValueError("Connect the official Article Voice extension.")
     request = receive(source or sys.stdin.buffer)
     method = request.get("method")
-    if method not in ("heartbeat", "status", "voices", "speech"):
+    if method not in ("heartbeat", "status", "voices", "speech", "ocr"):
         raise ValueError("Unknown reader request")
     if method == "heartbeat":
         write_json(DIRECTORY / "chrome-connection.json", {"protocolVersion": 1,
@@ -53,6 +88,9 @@ def run(origin, source=None, emit=send):
         return
     if method == "status":
         emit({"type": "result", "value": {"connected": True, "ready": bool((health(CONNECTION['port']) or {}).get('ready'))}})
+        return
+    if method == 'ocr':
+        emit({'type': 'result', 'value': recognize(request.get('payload'))})
         return
     port = ensure_engine(lambda **value: emit({"type": "progress", **value}))
     if method == "voices":

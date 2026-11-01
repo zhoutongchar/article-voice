@@ -17,11 +17,14 @@ export class ReaderEngine {
     this.audio.addEventListener('waiting', () => { if (this.wantsPlay) { this.state = 'buffering'; this.emit(); } });
     this.controller = new AbortController(); this.epoch = 0; this.loadVersion = 0;
   }
-  load(article, settings) {
+  load(article, settings, prepared = []) {
     this.stop(); this.loadVersion++;
     this.article = article; this.settings = { ...settings };
-    this.segments = article.passages.map(item => ({ ...item }));
-    this.index = 0; this.loadedIndex = -1; this.bytes = 0; this.error = '';
+    this.segments = article.passages.map((item, index) => {
+      const prior = prepared[index];
+      return { ...item, ...(prior?.text === item.text && prior.block === item.block && prior.offset === item.offset ? { result: prior.result } : {}) };
+    });
+    this.index = 0; this.loadedIndex = -1; this.bytes = this.segments.reduce((sum, segment) => sum + (segment.result?.pcm.byteLength || 0), 0); this.error = '';
     this.setSpeed(settings.speed || 1); this.emit();
   }
   emit() {
@@ -113,6 +116,11 @@ export class ReaderEngine {
   async next() {
     if (!this.wantsPlay) return;
     if (this.index + 1 >= this.segments.length) {
+      const epoch = this.epoch;
+      if (this.onEnd) {
+        try { if (await this.onEnd() || epoch !== this.epoch) return; }
+        catch (error) { if (epoch === this.epoch && error.name !== 'AbortError') this.fail(error); return; }
+      }
       this.wantsPlay = false; this.state = 'ended'; this.onHighlight(null); this.emit(); return;
     }
     this.index++; this.loadedIndex = -1; await this.play();

@@ -1,10 +1,12 @@
-import { extractArticle, splitPassages, rangeFor, wordFromPoint } from './article.js';
 import { ScrollFollow, SCROLL_PAUSE_MS } from './follow.js';
+import { createSource } from './sources/registry.js';
+import { SourceHost } from './sources/host.js';
+import { recognizeImage } from './sources/recognize.js';
 
-export function mountReader({ openFrame, onRequest, sendEvent = message => chrome.runtime.sendMessage(message) } = {}) {
+export function mountReader({ openFrame, onRequest, sourceAdapter, recognize = recognizeImage, sendEvent = message => chrome.runtime.sendMessage(message) } = {}) {
   const existing = document.getElementById('article-voice-host');
   if (existing) { existing.style.display = ''; return; }
-  let article;
+  let article, source;
   const host = document.createElement('div');
   host.id = 'article-voice-host';
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;right:20px;bottom:20px;width:408px;max-width:calc(100vw - 24px);height:332px;max-height:calc(100vh - 32px);border-radius:22px;box-shadow:0 20px 80px #0005;overflow:hidden;color-scheme:light;';
@@ -17,6 +19,18 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
   const style = document.createElement('style');
   style.textContent = '::highlight(article-voice-word){background:#ffcb4b!important;color:#171c18!important;text-decoration:underline;text-decoration-color:#ab6e00;text-decoration-thickness:2px;}::highlight(article-voice-passage){background:#c9efd666!important;color:inherit;}';
   document.head.append(style);
+  const marks = document.createElement('div');
+  marks.id = 'article-voice-marks';
+  marks.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646;';
+  const passageMarks = document.createElement('div'), wordMarks = document.createElement('div');
+  marks.append(passageMarks, wordMarks); document.documentElement.append(marks);
+  const paint = (container, rects, color) => {
+    container.replaceChildren(...rects.map(rect => {
+      const marker = document.createElement('div');
+      marker.style.cssText = `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;background:${color};border-radius:2px;`;
+      return marker;
+    }));
+  };
   const follow = new ScrollFollow();
   let lastBlock = -1, followTimer, scrollFrame, dragging = false, pointerHeld = false;
   const cancelScroll = () => { cancelAnimationFrame(scrollFrame); scrollFrame = undefined; };
@@ -65,6 +79,7 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
     cancelScroll();
     highlights?.delete('article-voice-word'); highlights?.delete('article-voice-passage');
     passageHighlight.clear(); wordHighlight.clear(); highlightedBlock = null; highlightedWord = '';
+    passageMarks.replaceChildren(); wordMarks.replaceChildren();
   }
   // Some browser-control sessions replace extension frames with an empty
   // srcdoc. Explain the interruption without undoing that replacement or
@@ -86,42 +101,51 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
   showInterruption();
   function highlight(info) {
     if (!info || !article) { clear(); return { word: '', scroll: window.scrollY }; }
-    const block = article.blocks[info.block];
-    if (!block) { clear(); return { word: '' }; }
+    if (!article.blocks[info.block]) { clear(); return { word: '' }; }
+    const block = `${article.id}:${info.block}`;
     if (highlightedBlock !== block) {
-      const passage = rangeFor(block);
+      const passage = source.span(info.block);
       if (!passage) { clear(); return { word: '', stale: true }; }
-      passageHighlight.clear(); passageHighlight.add(passage);
-      highlights?.set('article-voice-passage', passageHighlight);
+      passageHighlight.clear();
+      if (passage.range) { passageHighlight.add(passage.range); highlights?.set('article-voice-passage', passageHighlight); }
+      else paint(passageMarks, passage.rects, '#c9efd666');
       highlightedBlock = block;
     }
     if (info.start == null || info.end == null) {
       wordHighlight.clear(); highlightedWord = '';
+      wordMarks.replaceChildren();
       return { word: '', scroll: window.scrollY };
     }
     const wordKey = `${info.block}:${info.start}:${info.end}`;
-    const word = rangeFor(block, info.start, info.end);
+    const word = source.span(info.block, info.start, info.end);
     if (!word) { clear(); return { word: '', stale: true }; }
     if (highlightedWord !== wordKey) {
-      wordHighlight.clear(); wordHighlight.add(word);
-      if (!highlights?.has('article-voice-word')) highlights?.set('article-voice-word', wordHighlight);
+      wordHighlight.clear();
+      if (word.range) {
+        wordHighlight.add(word.range);
+        if (!highlights?.has('article-voice-word')) highlights?.set('article-voice-word', wordHighlight);
+      } else paint(wordMarks, word.rects, '#ffcb4bbf');
       highlightedWord = wordKey;
     }
-    const rect = word.getBoundingClientRect();
-    if (follow.canScroll && !pointerHeld && (rect.top < 90 || rect.bottom > innerHeight - 160)) {
+    const rect = word.rects[0];
+    if (!rect) { clear(); return { word: '', stale: true }; }
+    if (article.source.scroll !== false && follow.canScroll && !pointerHeld && (rect.top < 90 || rect.bottom > innerHeight - 160)) {
       const target = rect.top + window.scrollY - innerHeight * 0.35;
       movePage(Math.max(0, target), lastBlock !== info.block);
     }
     lastBlock = info.block;
-    return { word: word.toString(), scroll: window.scrollY,
-      rect: { top: rect.top, bottom: rect.bottom }, highlighted: highlights?.has('article-voice-word') || false };
+    return { word: word.text, scroll: window.scrollY,
+      rect: { top: rect.top, bottom: rect.bottom }, highlighted: highlights?.has('article-voice-word') || !!wordMarks.childElementCount };
   }
   const handle = message => {
     if (message.type === 'article') {
-      article = extractArticle();
-      return { title: article.title, url: article.url, language: article.language,
-        blocks: article.blocks.map(b => b.text), passages: splitPassages(article.blocks) };
+      source ||= new SourceHost(sourceAdapter || createSource({ document, url: new URL(location.href), recognize,
+        onChange: () => { clear(); Promise.resolve(sendEvent({ type: 'source-changed' })).catch(() => {}); } }));
+      return source.open().then(value => article = value);
     }
+    if (message.type === 'source-next') return source.prepareNext(message.after);
+    if (message.type === 'source-present') { clear(); return source.present(message.id).then(value => article = value); }
+    if (message.type === 'source-cancel') return source?.cancel();
     if (message.type === 'highlight') return highlight(message.value);
     if (message.type === 'follow') {
       follow.setEnabled(message.value); clearTimeout(followTimer); notifyFollow(0);
@@ -136,11 +160,15 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
       host.style.borderRadius = minimal ? '14px' : '22px';
       frame.style.borderRadius = 'inherit'; return {};
     }
-    if (message.type === 'close') { cleanup(); return {}; }
+    if (message.type === 'close') return Promise.resolve(cleanup()).then(() => ({}));
   };
   const listener = (message, sender, reply) => {
     if (sender.id !== chrome.runtime.id) return;
-    try { const result = handle(message); if (result !== undefined) reply({ ok: true, value: result }); }
+    try {
+      const result = handle(message);
+      if (result?.then) { result.then(value => reply({ ok: true, value }), error => reply({ ok: false, error: error.message })); return true; }
+      if (result !== undefined) reply({ ok: true, value: result });
+    }
     catch (error) { reply({ ok: false, error: error.message }); }
   };
   let pointer;
@@ -157,11 +185,14 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
       || (pointer && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 5)) return;
     if (!(event.target instanceof Element) || event.target.isContentEditable
       || event.target.closest('a,button,input,textarea,select,summary,[role="button"],[role="link"],#article-voice-host')) return;
-    const position = wordFromPoint(article, event.clientX, event.clientY);
-    if (position) Promise.resolve(sendEvent({ type: 'seek-word', ...position })).catch(() => {});
+    const position = source.wordAtPoint(event.clientX, event.clientY);
+    if (position) {
+      if (article.source.pagination) { event.preventDefault(); event.stopImmediatePropagation(); }
+      Promise.resolve(sendEvent({ type: 'seek-word', ...position })).catch(() => {});
+    }
   };
   document.addEventListener('pointerdown', pointerDown, { passive: true });
-  document.addEventListener('click', clickWord);
+  document.addEventListener('click', clickWord, true);
   window.addEventListener('wheel', manualScroll, { passive: true });
   window.addEventListener('touchmove', manualScroll, { passive: true });
   document.addEventListener('keydown', scrollKey);
@@ -172,9 +203,9 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
   let bridgeCleanup;
   function cleanup() {
     interruptionObserver.disconnect();
-    clear(); host.remove(); style.remove();
+    clear(); host.remove(); style.remove(); marks.remove();
     document.removeEventListener('pointerdown', pointerDown);
-    document.removeEventListener('click', clickWord);
+    document.removeEventListener('click', clickWord, true);
     clearTimeout(followTimer); cancelScroll();
     window.removeEventListener('wheel', manualScroll);
     window.removeEventListener('touchmove', manualScroll);
@@ -185,6 +216,7 @@ export function mountReader({ openFrame, onRequest, sendEvent = message => chrom
     document.removeEventListener('scroll', dragScroll, true);
     bridgeCleanup?.();
     if (!onRequest) chrome.runtime.onMessage.removeListener(listener);
+    return source?.dispose();
   }
   if (onRequest) bridgeCleanup = onRequest(handle, frame);
   else chrome.runtime.onMessage.addListener(listener);

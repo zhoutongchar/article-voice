@@ -74,7 +74,7 @@ class SetupTests(unittest.TestCase):
         class Fragmented(io.BytesIO):
             def read(self,n=-1): return super().read(min(n,2))
         self.assertEqual(native_host.receive(Fragmented(struct.pack('=I',len(body))+body)),value)
-        with self.assertRaises(ValueError): native_host.receive(io.BytesIO(struct.pack('=I',32001)))
+        with self.assertRaises(ValueError): native_host.receive(io.BytesIO(struct.pack('=I',native_host.MAX_OCR_REQUEST+1)))
         with self.assertRaises(EOFError): native_host.receive(io.BytesIO(b'\0\1'))
     def test_native_host_checks_origin_before_any_engine_or_text_request(self):
         with patch.object(native_host,'ensure_engine',side_effect=AssertionError('Must not start')):
@@ -84,6 +84,39 @@ class SetupTests(unittest.TestCase):
         stream=io.BytesIO(); native_host.send({'type':'chunk','data':'AAAB'},stream)
         stream.seek(0); self.assertEqual(native_host.receive(stream),{'type':'chunk','data':'AAAB'})
         with self.assertRaises(ValueError): native_host.send({'data':'a'*(1024*1024)},io.BytesIO())
+
+    def test_only_ocr_may_use_the_larger_image_request_budget(self):
+        value={'method':'ocr','payload':{'image':'a'*40000}}
+        body=json.dumps(value).encode()
+        self.assertEqual(native_host.receive(io.BytesIO(struct.pack('=I',len(body))+body)),value)
+        value['method']='speech'; body=json.dumps(value).encode()
+        with self.assertRaisesRegex(ValueError,'shorter'):
+            native_host.receive(io.BytesIO(struct.pack('=I',len(body))+body))
+
+    def test_ocr_does_not_load_or_poll_the_speech_engine(self):
+        value={'method':'ocr','payload':{'image':'fixture'}}; body=json.dumps(value).encode()
+        origin=f"chrome-extension://{native_host.CONNECTION['extensionId']}/"
+        with patch.object(native_host,'ensure_engine',side_effect=AssertionError('Must not load speech')), \
+             patch.object(native_host,'health',side_effect=AssertionError('Must not poll speech')), \
+             patch.object(native_host,'recognize',return_value={'lines':[]}) as recognize:
+            replies=[]; native_host.run(origin,io.BytesIO(struct.pack('=I',len(body))+body),replies.append)
+        recognize.assert_called_once_with(value['payload'])
+        self.assertEqual(replies,[{'type':'result','value':{'lines':[]}}])
+
+    def test_ocr_subprocess_is_cleaned_up_when_its_response_is_invalid(self):
+        class Child:
+            returncode=None
+            terminated=False
+            def __enter__(self): return self
+            def __exit__(self,*_): pass
+            def communicate(self,*_,**__): return b'not json',b''
+            def poll(self): return self.returncode
+            def terminate(self): self.terminated=True
+            def wait(self,**_): self.returncode=0
+        child=Child()
+        with patch('pathlib.Path.is_file',return_value=True),patch.object(native_host.subprocess,'Popen',return_value=child):
+            with self.assertRaises(ValueError): native_host.recognize({'image':'fixture'})
+        self.assertTrue(child.terminated)
 
 class HeartbeatTests(unittest.TestCase):
     def request(self, method, emit):

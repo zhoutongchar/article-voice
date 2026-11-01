@@ -39,6 +39,7 @@ def run(*args):
 
 run('swift', 'build', '--package-path', str(MAC), '-c', 'release', '--product', 'ArticleVoice')
 run('swift', 'build', '--package-path', str(MAC), '-c', 'release', '--product', 'ArticleVoiceHost')
+run('swift', 'build', '--package-path', str(MAC), '-c', 'release', '--product', 'ArticleVoiceOCR')
 run('node', 'scripts/build.mjs')
 binary_dir = Path(subprocess.check_output(['swift', 'build', '--package-path', str(MAC), '-c', 'release', '--show-bin-path'], text=True).strip())
 RESOURCES.mkdir(parents=True, exist_ok=True)
@@ -78,6 +79,9 @@ host = CONTENTS / 'MacOS' / 'ArticleVoiceHost'
 host.unlink(missing_ok=True)
 shutil.copy2(binary_dir / 'ArticleVoiceHost', host)
 host.chmod(0o755)
+ocr = CONTENTS / 'MacOS' / 'ArticleVoiceOCR'
+shutil.copy2(binary_dir / 'ArticleVoiceOCR', ocr)
+ocr.chmod(0o755)
 
 sys.path.insert(0, str(ROOT / 'local'))
 from references import ReferenceLibrary, canonical
@@ -96,7 +100,7 @@ info = {
     'CFBundleExecutable': 'ArticleVoice',
     'CFBundlePackageType': 'APPL',
     'CFBundleShortVersionString': version,
-    'CFBundleVersion': '7',
+    'CFBundleVersion': '8',
     'CFBundleIconFile': 'AppIcon',
     'NSPrincipalClass': 'NSApplication',
     'NSHighResolutionCapable': True,
@@ -114,6 +118,7 @@ if identity:
     run('codesign', '--force', '--deep', '--options', 'runtime', '--timestamp', '--sign', identity, str(APP))
 else:
     run('codesign', '--force', '--sign', '-', str(host))
+    run('codesign', '--force', '--sign', '-', str(ocr))
     run('codesign', '--force', '--sign', '-', str(APP))
 run('codesign', '--verify', '--deep', '--strict', str(APP))
 extension_zip = MAC / 'build' / 'Article Voice Chrome.zip'
