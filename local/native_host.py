@@ -31,8 +31,8 @@ def receive(stream):
     value = json.loads(exact(stream, length))
     if not isinstance(value, dict):
         raise ValueError("Invalid reader request")
-    page_request = value.get('method') == 'prepare' or (value.get('method') == 'speech' and isinstance(value.get('payload'), dict) and 'preparation' in value['payload'])
-    if value.get('method') != 'ocr' and length > (96000 if page_request else 32000):
+    text_request = value.get('method') in ('prepare', 'speech')
+    if value.get('method') != 'ocr' and length > (96000 if text_request else 32000):
         raise ValueError("Choose a shorter reading.")
     return value
 
@@ -112,13 +112,17 @@ def run(origin, source=None, emit=send):
         raise ValueError("Invalid speech request")
     body = json.dumps({**{key: payload.get(key) for key in ("text", "voice", "language", "referenceId")},
                        **({'preparation': payload['preparation']} if 'preparation' in payload else {})}, ensure_ascii=False).encode()
-    if len(body) > (96000 if 'preparation' in payload else 24000):
+    if len(body) > 96000:
         raise ValueError("Choose a shorter passage.")
     query = Request(f"http://127.0.0.1:{port}/speech", data=body, headers={"Content-Type": "application/json"})
     try:
         with HTTP.open(query, timeout=180) as response:
             value = json.load(response)
     except HTTPError as error:
+        if error.code == 400:
+            try: message = json.loads(error.read(4096)).get('error')
+            except (ValueError, AttributeError): message = None
+            if isinstance(message, str) and message: raise ValueError(message) from None
         raise ValueError("Your voice changed. Reconnect in the reader’s Settings." if error.code == 409 else
                          "The voice engine is busy. Try this passage again.") from None
     pcm = value.pop("pcm")

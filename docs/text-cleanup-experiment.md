@@ -13,6 +13,22 @@ Recognized line breaks remain available to the model, so it can join wrapped
 words. Later pages consume that joined prefix once. Narration already committed
 to audio is not rewritten. See [the continuous reading queue](source-adapters.md#shared-queue).
 
+Starting with 0.7.2, each source paragraph is one speech request. HTML no longer
+has a second 160-character splitter. OCR prepares the full window first, then
+projects the original paragraph boundaries through the LLM's UTF-16 mapping.
+Visual line wraps and LLM-inserted blank lines cannot create extra speech
+requests. An unfinished page tail includes the next page's entire first
+paragraph, including subsequent sentences, before synthesis. Original OCR
+fragments remain available for highlighting and word seeking.
+
+The first full paragraph must finish synthesis and alignment before playback.
+Later paragraphs are prepared ahead. Requests accept up to 12,000 UTF-16 units;
+a separate 4,096-codec-token audio limit rejects an unfinished generation before
+any audio is returned. Paragraphs are never silently cut to fit either limit.
+OCR paragraph grouping and continuation detection still depend on page layout
+and recognized punctuation; this is not perfect paragraph reconstruction for
+every book.
+
 ## Pipeline
 
 1. The source adapter extracts text and retains its original page coordinates.
@@ -126,3 +142,21 @@ verified prepared-piece speech, returning measured words and framed audio. Its
 first speech request took 5.51 seconds, then 2.61 seconds for a warm repeat of the
 same prepared text (fresh synthesis, not audio-cache replay). This illustrates
 the remaining cold-start cost; the LLM is not the dominant stage in that sample.
+
+The 0.7.2 HTML browser regression used real Qwen synthesis and forced alignment:
+a 591-character, multi-sentence paragraph remained one request. Playback crossed
+“plunging stock” in the same audio clip without an `ended` event, clip replacement
+or buffering transition, with original-page highlighting and measured word
+seeking. It produced 31.9 seconds of audio with 9.25 seconds of synthesis and
+0.23 seconds of alignment in one warm-engine sample. This verifies removal of
+the artificial request boundary; it does not assert that the model adds no
+natural pauses. The updated real-Vision OCR fixture also kept a two-sentence
+cross-page paragraph in one request and consumed it once. Live Amazon Kindle
+and the user's original news article were not rerun for 0.7.2.
+
+The installed 0.7.2 native host independently generated the same full HTML
+paragraph through the last word, returning 13 framed audio chunks and measured
+timestamps. That request took 9.14 seconds, including 1.07 seconds of formatting,
+7.71 seconds of speech generation and 0.15 seconds of alignment. The app and
+bundled extension were installed and code-signature verification passed; Chrome
+still requires the user's Reload to activate the installed extension update.

@@ -30,6 +30,7 @@ test('local provider rejects stale model identity, missing alignment, malformed 
   await assert.rejects(localSynthesize('hello', settings, undefined, async () => { throw new DOMException('Cancelled', 'AbortError'); }), { name: 'AbortError' });
   await assert.rejects(localSynthesize('hello', { ...settings, voiceReferenceId: undefined }, undefined, () => assert.fail('Missing reference must not initiate inference')), /fixed voice reference/);
   await assert.rejects(localSynthesize('hello', settings, undefined, async () => new Response('', { status: 409 })), /reference changed/);
+  await assert.rejects(localSynthesize('hello', settings, undefined, async () => Response.json({ error: 'This paragraph exceeds the local audio limit.' }, { status: 400 })), /paragraph exceeds/);
 });
 
 test('local voice metadata supports filters without hiding multilingual speakers by native language', async () => {

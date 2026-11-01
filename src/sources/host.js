@@ -1,4 +1,4 @@
-import { splitPassages } from '../article.js';
+import { paragraphPassages } from '../article.js';
 
 // Coordinates, images and navigation stay in the page. Only serializable
 // reading units cross the bridge to the common player and speech queue.
@@ -7,7 +7,7 @@ export class SourceHost {
   serialize(unit) {
     return { id: unit.id, title: unit.title, url: unit.url, language: unit.language || '', label: unit.label || '',
       source: { id: this.adapter.id, ...this.adapter.capabilities },
-      blocks: unit.blocks.map(block => block.text), passages: splitPassages(unit.blocks) };
+      blocks: unit.blocks.map(block => block.text), passages: paragraphPassages(unit.blocks) };
   }
   async open() { return this.serialize(await this.adapter.open()); }
   async prepareNext(after, count = 2) {

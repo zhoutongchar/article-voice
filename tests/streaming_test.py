@@ -53,7 +53,7 @@ class StreamingTests(unittest.TestCase):
 
     def start(self):
         connection = http.client.HTTPConnection(*self.http.server_address, timeout=3)
-        text = "A useful reader follows the actual sound, and begins before the whole paragraph is ready. The next sentence can arrive while the first one is playing."
+        text = "A useful reader follows the actual sound, and begins before the whole article is ready. Another sentence belongs in this paragraph.\n\nThe next paragraph can arrive while the first one is playing."
         connection.request("POST", "/speech/stream", json.dumps({"text": text, "voice": "Ryan", "referenceId": "a" * 64}), {"Content-Type": "application/json"})
         response = connection.getresponse()
         self.assertEqual(response.status, 200)
@@ -80,13 +80,14 @@ class StreamingTests(unittest.TestCase):
         response.close(); connection.close()
         self.assertTrue(self.runtime.stopped.wait(3))
 
-    def test_source_offsets_and_piece_limits_preserve_unicode_and_punctuation(self):
-        text = "  😀 A useful reader follows the actual sound. " + "中文也可以朗读，让每个词语的位置保持准确。" * 20
+    def test_paragraph_boundaries_preserve_unicode_offsets_and_unbounded_sentences(self):
+        text = "  😀 A useful reader follows the actual sound.\nA line wrap stays in this paragraph. " + "中文也可以朗读，让每个词语的位置保持准确。" * 20 + "\n\nAnother paragraph."
         source = text.encode("utf-16-le")
         previous = 0
+        self.assertEqual(len(list(pieces(text))), 2)
+        self.assertGreater(len(next(pieces(text))[0]), 480)
         for value, offset in pieces(text):
             length = len(value.encode("utf-16-le")) // 2
-            self.assertLessEqual(len(value), 160)
             self.assertEqual(source[offset * 2:(offset + length) * 2].decode("utf-16-le"), value)
             self.assertFalse(source[previous * 2:offset * 2].decode("utf-16-le").strip())
             previous = offset + length

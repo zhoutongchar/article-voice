@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readSSE, pcmWav, synthesize, listVoices, API_VERSION } from '../src/cartesia.js';
 import { alignWords, wordAtPosition } from '../src/alignment.js';
-import { splitPassages } from '../src/article.js';
+import { paragraphPassages } from '../src/article.js';
 import { cacheKey } from '../src/cache.js';
 import { readRecording } from '../src/recording.js';
 import { parseVoice } from '../src/voices.js';
@@ -40,15 +40,15 @@ test('source offsets remain UTF-16 coordinates for emoji and letters outside the
   assert.deepEqual(aligned.map(word => text.slice(word.from, word.to)), ['𐐀', 'hello']);
 });
 
-test('passages preserve original offsets and split long sentences without breaking emoji', () => {
-  const text = 'First sentence. ' + 'A long linked sentence 😀 with some words. '.repeat(20);
-  const passages = splitPassages([{ text }, { text: '中文没有空格。也需要分句。' }], 80);
-  assert.ok(passages.length > 5);
+test('paragraph requests preserve UTF-16 offsets without sentence or character cutoffs', () => {
+  const text = '  First sentence. ' + 'A long linked sentence 😀 with some words. '.repeat(90) + '\nA visual line wrap stays here.\n\n A separate paragraph. ';
+  const passages = paragraphPassages([{ text }, { text: '中文没有空格。也需要保持整个段落。' }]);
+  assert.equal(passages.length, 3);
+  assert.ok(passages[0].text.length > 2500);
+  assert.ok(passages[0].text.endsWith('A visual line wrap stays here.'));
   for (const item of passages) {
-    const original = item.block === 0 ? text : '中文没有空格。也需要分句。';
+    const original = item.block === 0 ? text : '中文没有空格。也需要保持整个段落。';
     assert.equal(original.slice(item.offset, item.offset + item.text.length), item.text);
-    assert.ok(item.text.length <= 80);
-    assert.ok(!/[\uD800-\uDBFF]$/.test(item.text));
   }
 });
 

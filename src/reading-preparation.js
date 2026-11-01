@@ -1,4 +1,4 @@
-import { splitPassages } from './article.js';
+import { paragraphPassages } from './article.js';
 import { preparedTextProjection } from './prepared-text.js';
 import { localPrepareText } from './local.js';
 import { alignWords } from './alignment.js';
@@ -8,11 +8,14 @@ import { alignWords } from './alignment.js';
 export async function prepareReadingUnit(unit, settings, signal, prepare = localPrepareText) {
   if (settings.provider !== 'local' || unit.source?.format !== 'ocr') return unit;
   let position = 0;
+  const parts = [];
   const blocks = unit.blocks.map((text, block) => {
+    if (block) { const separator = unit.separators?.[block - 1] ?? '\n\n'; parts.push(separator); position += separator.length; }
+    parts.push(text);
     const result = { block, start: position, end: position + text.length };
-    position = result.end + 2; return result;
+    position = result.end; return result;
   });
-  const original = unit.blocks.join('\n\n');
+  const original = parts.join('');
   if (!original.trim()) return { ...unit, passages: [] };
   const record = await prepare(original, signal);
   if (record.original !== original || typeof record.id !== 'string') throw new Error('The prepared page does not match this reading.');
@@ -23,9 +26,14 @@ export async function prepareReadingUnit(unit, settings, signal, prepare = local
       .map(block => ({ block: block.block, start: Math.max(source.start, block.start) - block.start,
         end: Math.min(source.end, block.end) - block.start })) : [];
   };
-  // Preserve complete sentences when possible. The first sentence remains a
-  // separate piece for startup; later pieces amortize voice/aligner overhead.
-  const passages = splitPassages([{ text: record.text }], 480).map(piece => {
+  // Project SOURCE paragraph boundaries through the LLM's mapping. Neither
+  // a flattened blank line nor a new line inserted by the model may split or
+  // merge speech requests. Page-continuation fragments share one paragraph.
+  const passages = paragraphPassages([{ text: original }]).map(paragraph => {
+    const prepared = projection.prepared(paragraph.offset, paragraph.offset + paragraph.text.length);
+    if (!prepared) throw new Error('A prepared paragraph lost its source text.');
+    const raw = record.text.slice(prepared.start, prepared.end), text = raw.trim();
+    const piece = { text, offset: prepared.start + raw.indexOf(text) };
     const sourceRanges = ranges(piece.offset, piece.offset + piece.text.length);
     return { text: piece.text, preparedOffset: piece.offset, sourceRanges,
       block: sourceRanges[0]?.block ?? 0, offset: sourceRanges[0]?.start ?? 0,

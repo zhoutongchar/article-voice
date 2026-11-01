@@ -4,7 +4,7 @@ import { createKindleSource } from '../src/sources/kindle.js';
 const continuous = new URL(location.href).searchParams.has('continuous');
 const pages = continuous ? [
   ['A useful reader keeps a sentence together, even when a page ends with re-'],
-  ['markable details that complete the thought.', 'A new paragraph begins beside the garden gate. The story carries on in the same voice.'],
+  ['markable details that complete the thought. Another sentence finishes the same paragraph.', 'A new paragraph begins beside the garden gate. The story carries on in the same voice.'],
   ['The last page is quiet. There is time to finish the story.']
 ] : [
   ['A quiet room waits at the end of the street.', 'Morning light moves across the table. There is time to notice it.'],
@@ -233,7 +233,8 @@ if (continuous) {
       const calls = reader.frame.contentWindow.localCalls;
       if (calls.filter(call => call.text.includes('remarkable')).length !== 1) throw new Error('The continuation was generated more than once');
       if (calls.some(call => call.preparation?.status !== 'prepared-piece')) throw new Error('Speech repeated LLM preparation per piece');
-      pass('Continued sentence is voiced once; following page skips the consumed prefix');
+      if (!calls.find(call => call.text.includes('remarkable'))?.text.includes('Another sentence finishes the same paragraph.')) throw new Error('The continued paragraph was split at a sentence');
+      pass('The entire continued paragraph is one speech request; the following page skips the consumed prefix');
       const stages = calls.map(call => call.timings).filter(Boolean);
       pass(`Measured speech stages: ${JSON.stringify(stages)}`);
       player.session.pause();

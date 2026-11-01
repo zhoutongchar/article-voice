@@ -1,30 +1,22 @@
-"""Small aligned audio pieces, with exact source offsets and no guessed timings."""
+"""Aligned paragraphs, with exact source offsets and no guessed timings."""
 import json
 import re
 from urllib.request import ProxyHandler, Request, build_opener
 from runtime import CONFIG
 
-PROTOCOL = "aligned-sentences-v1"
+PROTOCOL = "aligned-paragraphs-v1"
 
 
-def pieces(text, limit=160):
+def pieces(text):
     cursor = 0
-    while cursor < len(text):
-        end = min(cursor + limit, len(text))
-        window = text[cursor:end]
-        boundaries = [m.end() for m in re.finditer(r"[。！？]|[.!?](?=\s|$)", text[cursor:end + 1]) if 40 <= m.end() <= end - cursor]
-        if boundaries:
-            end = cursor + boundaries[0]
-        elif end < len(text):
-            breaks = [m.end() for m in re.finditer(r"[\s,;，；]", window) if m.end() >= limit // 2]
-            if breaks:
-                end = cursor + breaks[-1]
+    for boundary in (*re.finditer(r"\r?\n[ \t]*\r?\n", text), None):
+        end = boundary.start() if boundary else len(text)
         raw = text[cursor:end]
         value = raw.strip()
         if value:
             start = cursor + len(raw) - len(raw.lstrip())
             yield value, len(text[:start].encode("utf-16-le")) // 2
-        cursor = end
+        cursor = boundary.end() if boundary else len(text)
 
 
 def aligned_events(runtime, text, voice, language, cancelled, prepare=True):

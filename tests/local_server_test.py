@@ -54,7 +54,7 @@ class ServerBoundaryTests(unittest.TestCase):
         for body in ({"text": [], "voice": "Ryan"}, {"text": "hello", "voice": "unknown"},
                      {"text": "hello", "voice": "Ryan", "language": "hi"},
                      {"text": "hello", "voice": "Ryan", "prepare": "false"},
-                     {"text": "x" * 2501, "voice": "Ryan"}):
+                     {"text": "😀" * 6001, "voice": "Ryan"}):
             status, _, _ = self.request("POST", "/speech", json.dumps(body), {"Content-Type": "application/json"})
             self.assertEqual(status, 400)
 
@@ -74,11 +74,11 @@ class ServerBoundaryTests(unittest.TestCase):
         with patch.object(service, 'runtime', producer):
             status, _, _ = self.request('POST', '/prepare', json.dumps({'text': page}), {'Content-Type': 'application/json'})
             self.assertEqual(status, 200)
-            selection = {'id': 'b' * 64, 'original': page, 'start': 0, 'end': 4}
-            status, _, _ = self.request('POST', '/speech', json.dumps({'text': 'A li', 'voice': 'Ryan', 'referenceId': 'a' * 64,
+            selection = {'id': 'b' * 64, 'original': page, 'start': 0, 'end': len(page)}
+            status, _, _ = self.request('POST', '/speech', json.dumps({'text': page, 'voice': 'Ryan', 'referenceId': 'a' * 64,
                                                                      'preparation': selection}), {'Content-Type': 'application/json'})
             self.assertEqual(status, 200)
-        self.assertEqual(calls, [('prepare', page), ('speech', 'A li', {'preparation': selection})])
+        self.assertEqual(calls, [('prepare', page), ('speech', page, {'preparation': selection})])
         for text in ('', [], '😀' * 6001):
             status, _, _ = self.request('POST', '/prepare', json.dumps({'text': text}), {'Content-Type': 'application/json'})
             self.assertEqual(status, 400)

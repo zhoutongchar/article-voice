@@ -11,6 +11,9 @@ from text_cleanup import TextFormatter, MODEL as FORMATTER_MODEL, REVISION as FO
 CONFIG = json.loads(Path(__file__).with_name("config.json").read_text())
 
 
+MAX_SPEECH_TOKENS = 4096  # About 5.5 minutes at the model's 12 Hz codec rate.
+
+
 class SpeechRuntime:
     def __init__(self, data_directory=None, models_directory=None):
         self.tts = self.aligner = self.formatter = None
@@ -104,13 +107,13 @@ class SpeechRuntime:
         # Streaming yields let Stop discard the remaining work after a short chunk.
         for result in self.tts.generate(text=spoken, ref_audio=self.reference_audio[voice], ref_text=reference.transcript,
                                         lang_code=CONFIG["languages"].get(language, "auto"), **CONFIG["generation"],
-                                        stream=True, streaming_interval=1.0, max_tokens=1600, verbose=False):
+                                        stream=True, streaming_interval=1.0, max_tokens=MAX_SPEECH_TOKENS, split_pattern="", verbose=False):
             if cancelled and cancelled.is_set():
                 raise InterruptedError("Reading cancelled")
             generated_tokens += result.token_count
             chunks.append(np.array(result.audio, dtype=np.float32).reshape(-1))
-        if generated_tokens >= 1600:
-            raise ValueError("This passage reached the local generation limit; choose a shorter selection")
+        if generated_tokens >= MAX_SPEECH_TOKENS:
+            raise ValueError("This paragraph exceeds the local audio limit. Choose a shorter selection; no partial paragraph was played.")
         if not chunks:
             raise ValueError("Qwen did not generate audio")
         audio = np.concatenate(chunks)

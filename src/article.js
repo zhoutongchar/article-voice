@@ -97,32 +97,20 @@ export function wordFromPoint(article, x, y) {
   return null;
 }
 
-export function splitPassages(blocks, max = 480) {
+// Source paragraphs own speech boundaries. Visual line wraps and sentence
+// length never create additional requests or interrupt a sentence's prosody.
+export function paragraphPassages(blocks) {
   const result = [];
   for (const [block, item] of blocks.entries()) {
-    const segmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
-    let current = null;
-    for (const segment of segmenter.segment(item.text)) {
-      let start = segment.index, remaining = segment.segment;
-      while (remaining.length) {
-        let length = Math.min(max, remaining.length);
-        if (length < remaining.length) {
-          const space = remaining.lastIndexOf(' ', length);
-          if (space > max / 2) length = space + 1;
-          if (/[\uD800-\uDBFF]/.test(remaining[length - 1])) length--;
-        }
-        const raw = remaining.slice(0, length);
-        const text = raw.trim();
-        const offset = start + raw.indexOf(text);
-        if (text) {
-          // Keep the first sentence short for quick initial playback.
-          if (current && current.text.length + text.length + 1 <= max && result.length > 0) {
-            current.text = item.text.slice(current.offset, offset + text.length);
-          } else { current = { block, offset, text }; result.push(current); }
-        }
-        start += length; remaining = remaining.slice(length);
-      }
+    let start = 0;
+    const append = end => {
+      const raw = item.text.slice(start, end), text = raw.trim();
+      if (text) result.push({ block, offset: start + raw.indexOf(text), text });
+    };
+    for (const boundary of item.text.matchAll(/\r?\n[ \t]*\r?\n/g)) {
+      append(boundary.index); start = boundary.index + boundary[0].length;
     }
+    append(item.text.length);
   }
   return result;
 }

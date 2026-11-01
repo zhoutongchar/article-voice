@@ -71,7 +71,7 @@ public actor SpeechClient {
     }
 
     private func cacheFile(text: String, voice: Voice, language: String) throws -> URL {
-        let identity = try JSONEncoder().encode([configDigest] + (streaming ? ["aligned-sentences-v1"] : []) + [voice.id, voice.referenceId, language, text])
+        let identity = try JSONEncoder().encode([configDigest] + (streaming ? ["aligned-paragraphs-v1"] : []) + [voice.id, voice.referenceId, language, text])
         return cache.appendingPathComponent(Self.digest(identity)).appendingPathExtension("json")
     }
 
@@ -140,7 +140,7 @@ public actor SpeechClient {
             let event = try JSONDecoder().decode(Event.self, from: Data(line.utf8))
             switch event.type {
             case "start":
-                guard !started, event.protocolVersion == "aligned-sentences-v1" else { throw ReaderError.version }
+                guard !started, event.protocolVersion == "aligned-paragraphs-v1" else { throw ReaderError.version }
                 started = true
             case "clip":
                 guard started, !finished, let value = event.text, !value.isEmpty, let offset = event.offset, let clip = event.clip,

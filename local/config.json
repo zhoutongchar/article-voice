@@ -1,6 +1,6 @@
 {
   "port": 4318,
-  "pipeline": "qwen3-ocr-page-v1-10f63f8269d4",
+  "pipeline": "qwen3-paragraph-v2-9a2ff2d26c86",
   "model": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-4bit",
   "revision": "37e955a1deb861c088ae5f3a67043185f3d1a60c",
   "referenceModel": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-4bit",

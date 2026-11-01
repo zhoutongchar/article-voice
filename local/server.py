@@ -112,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= (32000 if self.path == '/speech/stream' else 96000) or self.headers.get_content_type() != "application/json":
+            if not 0 < length <= 96000 or self.headers.get_content_type() != "application/json":
                 raise ValueError("Expected a short JSON passage")
             request = json.loads(self.rfile.read(length))
             if self.path == '/prepare':
@@ -162,8 +162,8 @@ class Handler(BaseHTTPRequestHandler):
         prepare = request.get("prepare", True)
         if type(prepare) is not bool:
             raise ValueError("Invalid preparation mode")
-        if not isinstance(text, str) or not text.strip() or len(text) > 2500:
-            raise ValueError("Choose a passage of 1–2500 characters")
+        if not isinstance(text, str) or not text.strip() or utf16_length(text) > MAX_TEXT:
+            raise ValueError("Choose a paragraph of 1–12000 characters")
         if voice not in {v["id"] for v in CONFIG["voices"]}:
             raise ValueError("Choose an available local voice")
         if not isinstance(language, str) or (language and language not in CONFIG["languages"]):

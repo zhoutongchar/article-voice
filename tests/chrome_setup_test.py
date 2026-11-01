@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from urllib.error import HTTPError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
@@ -86,12 +87,28 @@ class SetupTests(unittest.TestCase):
         with self.assertRaises(ValueError): native_host.send({'data':'a'*(1024*1024)},io.BytesIO())
 
     def test_only_ocr_may_use_the_larger_image_request_budget(self):
-        value={'method':'ocr','payload':{'image':'a'*40000}}
+        value={'method':'ocr','payload':{'image':'a'*100000}}
         body=json.dumps(value).encode()
         self.assertEqual(native_host.receive(io.BytesIO(struct.pack('=I',len(body))+body)),value)
         value['method']='speech'; body=json.dumps(value).encode()
         with self.assertRaisesRegex(ValueError,'shorter'):
             native_host.receive(io.BytesIO(struct.pack('=I',len(body))+body))
+
+    def test_native_text_budget_accepts_full_multilingual_paragraphs(self):
+        for method in ('speech', 'prepare'):
+            value = {'method': method, 'payload': {'text': '中文' * 6000}}
+            body = json.dumps(value).encode()
+            self.assertEqual(native_host.receive(io.BytesIO(struct.pack('=I', len(body)) + body)), value)
+
+    def test_native_generation_limit_keeps_its_actionable_error(self):
+        value = {'method': 'speech', 'payload': {'text': 'paragraph'}}
+        body = json.dumps(value).encode()
+        error = HTTPError('http://127.0.0.1:4324/speech', 400, 'Bad Request', {},
+                          io.BytesIO(json.dumps({'error': 'This paragraph exceeds the local audio limit.'}).encode()))
+        with patch.object(native_host, 'ensure_engine', return_value=4324), patch.object(native_host.HTTP, 'open', side_effect=error):
+            with self.assertRaisesRegex(ValueError, 'paragraph exceeds'):
+                native_host.run(f"chrome-extension://{native_host.CONNECTION['extensionId']}/",
+                                io.BytesIO(struct.pack('=I', len(body)) + body), lambda value: None)
 
     def test_ocr_does_not_load_or_poll_the_speech_engine(self):
         value={'method':'ocr','payload':{'image':'fixture'}}; body=json.dumps(value).encode()

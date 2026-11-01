@@ -19,7 +19,7 @@ import Foundation
     public func prepare() async throws -> [Voice] {
         try Task.checkCancellation()
         if let health = try? await client.health(), health.ready {
-            guard !client.streaming || health.streaming == "aligned-sentences-v1" else { throw ReaderError.version }
+            guard !client.streaming || health.streaming == "aligned-paragraphs-v1" else { throw ReaderError.version }
             let voices = try await client.voices()
             try Task.checkCancellation()
             ready = true; status = "Local voices ready"
@@ -71,7 +71,7 @@ import Foundation
             if process?.isRunning == false { process = nil; throw ReaderError.service("Local voices couldn’t start. Try again, or open the engine log in Settings.") }
             if let health = try? await client.health(), health.ready {
                 guard health.instance == instance else { throw ReaderError.service("Another voice service is using this connection. Reopen Article Voice.") }
-                guard !client.streaming || health.streaming == "aligned-sentences-v1" else { throw ReaderError.version }
+                guard !client.streaming || health.streaming == "aligned-paragraphs-v1" else { throw ReaderError.version }
                 let voices = try await client.voices()
                 try Task.checkCancellation()
                 ready = true; status = "Local voices ready"

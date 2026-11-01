@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { continuousUnit, fullyConsumed } from '../src/continuous-text.js';
 import { prepareReadingUnit } from '../src/reading-preparation.js';
+import { paragraphPassages } from '../src/article.js';
 import { ReaderEngine } from '../src/engine.js';
 import { ReadingSession } from '../src/reading-session.js';
 
@@ -39,26 +40,30 @@ const clip = text => {
   return { pcm: new Uint8Array(48000), duration: Math.max(1, words.length * .1), words };
 };
 
-test('an unfinished sentence joins the next page before preparation, and its prefix is consumed once', () => {
-  const consumed = new Map(), a = unit('a', ['A complete paragraph.', 'We saw a re-']), b = unit('b', ['markable place. The next sentence.']);
+test('an unfinished paragraph joins the entire next-page paragraph before preparation, and its prefix is consumed once', () => {
+  const consumed = new Map(), a = unit('a', ['A complete paragraph.', 'We saw a re-']), b = unit('b', ['markable place. The next sentence.', 'A new paragraph.']);
   const plan = continuousUnit(a, [b], consumed);
-  assert.deepEqual(plan.blocks, ['A complete paragraph.', 'We saw a re-', 'markable place.']);
+  assert.deepEqual(plan.blocks, ['A complete paragraph.', 'We saw a re-', 'markable place. The next sentence.']);
   assert.deepEqual(plan.locations.at(-1), { unit: 'b', block: 0, offset: 0 });
   const later = continuousUnit(b, [], consumed);
-  assert.equal(later.blocks.join(''), ' The next sentence.');
-  assert.equal(later.locations[0].offset, 'markable place.'.length);
+  assert.deepEqual(plan.separators, ['\n\n', '\n']);
+  assert.equal(later.blocks.join(''), 'A new paragraph.');
+  assert.equal(later.locations[0].block, 1);
+  assert.equal(later.locations[0].offset, 0);
   assert.equal(fullyConsumed(b, consumed), false);
   assert.deepEqual(continuousUnit(unit('done', ['A complete sentence.']), [b], consumed).blocks, ['A complete sentence.']);
 });
 
-test('full OCR page reaches preparation once before splitting, preserving wrap repairs and word click coordinates', async () => {
-  const original = unit('page', ['😀 A re-\nmarkable place. ' + 'The familiar story continues naturally. '.repeat(15)]);
+test('full OCR page reaches preparation once and each paragraph remains one request, preserving wrap repairs and word click coordinates', async () => {
+  const original = unit('page', ['😀 A re-\nmarkable place. ' + 'The familiar story continues naturally. '.repeat(15), 'A second paragraph.']);
   const inputs = [], spoken = [], marks = [];
   const engine = new ReaderEngine({ audio: new AudioFixture(), cache, onHighlight: value => marks.push(value),
     prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, async text => { inputs.push(text); return formatted(text); }),
     generate: async (text, settings) => { spoken.push(text); assert.ok(settings.preparation); return clip(text); } });
   engine.load(original, settings); await engine.play(); await engine.fill(true);
-  assert.deepEqual(inputs, [original.blocks[0]]); assert.ok(engine.segments.length > 1);
+  assert.deepEqual(inputs, [original.blocks.join('\n\n')]); assert.equal(engine.segments.length, 2);
+  assert.ok(spoken[0].length > 480); assert.ok(spoken[0].endsWith('naturally.'));
+  assert.equal(spoken[1], 'A second paragraph.');
   assert.ok(spoken[0].includes('remarkable')); assert.ok(!spoken.join('').includes('re-'));
   const start = original.blocks[0].indexOf('markable');
   await engine.seekWord({ block: 0, start, end: start + 8 });
@@ -67,7 +72,7 @@ test('full OCR page reaches preparation once before splitting, preserving wrap r
 });
 
 test('queued continuation is spoken once, changes the visible page at its measured word, and supports source clicks', async () => {
-  const a = unit('a', ['We saw a re-']), b = unit('b', ['markable place. A new paragraph waits.']), c = unit('c', ['The last page ends.']);
+  const a = unit('a', ['We saw a re-']), b = unit('b', ['markable place. Another sentence belongs here.', 'A new paragraph waits.']), c = unit('c', ['The last page ends.']);
   let visible = a, session;
   const inputs = [], spoken = [], marks = [], visits = [];
   const engine = new ReaderEngine({ audio: new AudioFixture(), cache,
@@ -81,7 +86,7 @@ test('queued continuation is spoken once, changes the visible page at its measur
   } };
   session = new ReadingSession({ engine, transport, createAudio: () => new AudioFixture() });
   session.load(a, settings); await session.play(); await session.pending;
-  assert.equal(inputs[0], 'We saw a re-\n\nmarkable place.');
+  assert.equal(inputs[0], 'We saw a re-\nmarkable place. Another sentence belongs here.');
   assert.equal(spoken.filter(text => text.includes('markable')).length, 1);
   const word = engine.segments[0].result.words.find(word => word.word === 'remarkable');
   engine.audio.currentTime = word.start; engine.tick(); await until(() => visible.id === 'b' && !session.presenting);
@@ -94,8 +99,8 @@ test('queued continuation is spoken once, changes the visible page at its measur
   await session.stop();
 });
 
-test('a page transition plays its ready first sentence while an unfinished background speech request is cancelled', async () => {
-  const a = unit('a', ['The first page ends.']), b = unit('b', ['The next page is ready. ' + 'Another sentence follows naturally. '.repeat(25)]);
+test('a page transition plays its ready first paragraph while an unfinished background speech request is cancelled', async () => {
+  const a = unit('a', ['The first page ends.']), b = unit('b', ['The next page is ready.', 'Another sentence follows naturally. '.repeat(25)]);
   let visible = a, session, held = false, cancelled = false;
   const engine = new ReaderEngine({ audio: new AudioFixture(), cache,
     prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, async text => formatted(text)),
@@ -129,7 +134,7 @@ test('Stop during page preparation cannot publish new passages or start late aud
 
 test('later page arrival reorganizes an uncommitted tail while earlier narration remains frozen', async () => {
   const pages = [unit('a', ['The opening sentence ends.']), unit('b', ['A second page reaches an un-']),
-    unit('c', ['finished thought. The third page reaches a re-']), unit('d', ['markable ending.'])];
+    unit('c', ['finished thought.', 'The third page reaches a re-']), unit('d', ['markable ending.'])];
   let visible = pages[0], session; const inputs = [];
   const engine = new ReaderEngine({ audio: new AudioFixture(), cache,
     prepare: (unit, settings, signal) => prepareReadingUnit(unit, settings, signal, async text => { inputs.push(text); return formatted(text); }),
@@ -140,11 +145,41 @@ test('later page arrival reorganizes an uncommitted tail while earlier narration
     return visible;
   } } });
   session.load(pages[0], settings); await session.play(); await session.pending;
-  assert.ok(inputs.some(text => text.includes('un-\n\nfinished')));
+  assert.ok(inputs.some(text => text.includes('un-\nfinished')));
   assert.ok(!inputs.some(text => text.includes('re-')), 'The farthest unfinished tail must wait for context');
   const first = engine.segments.map(piece => piece.text).join('');
-  await engine.next(); await until(() => inputs.some(text => text.includes('re-\n\nmarkable')));
+  await engine.next(); await until(() => inputs.some(text => text.includes('re-\nmarkable')));
   assert.equal(inputs.filter(text => text === 'The opening sentence ends.').length, 1);
   assert.equal(first, 'The opening sentence ends.');
   await session.stop();
+});
+
+
+test('HTML paragraphs keep a middle-sentence phrase in one request through ReadingSession', async () => {
+  const text = 'The jitters are starting to show up in a number of ways: the yields lenders demand to finance big data-center projects and chip purchases; the plunging stock and bond prices of some AI companies that are borrowing heavily; and steep selloffs from technology companies around the world, which just recorded some of their biggest drops ever. ' + 'The same paragraph continues with a second sentence and keeps its natural rhythm. '.repeat(5);
+  const html = { id: 'html', blocks: [text, 'The next paragraph starts here.'], source: { format: 'html' } };
+  html.passages = paragraphPassages(html.blocks.map(text => ({ text })));
+  const spoken = [], engine = new ReaderEngine({ audio: new AudioFixture(), cache, generate: async text => { spoken.push(text); return clip(text); } });
+  const session = new ReadingSession({ engine });
+  session.load(html, settings); await session.play(); await engine.fill(true);
+  assert.deepEqual(spoken, html.blocks.map(text => text.trim())); assert.ok(spoken[0].length > 480);
+  const target = engine.segments[0].result.words.find(word => word.word === 'plunging');
+  await session.seekWord({ block: 0, start: text.indexOf('plunging'), end: text.indexOf('plunging') + 8 });
+  assert.equal(engine.audio.currentTime, target.start); assert.equal(engine.index, 0);
+  await session.stop();
+});
+
+
+test('an LLM-inserted blank line cannot cut a source paragraph into separate audio requests', async () => {
+  const first = 'First sentence. Second sentence ends.', second = 'A different paragraph.';
+  const original = first + '\n\n' + second, at = 'First sentence.'.length;
+  const text = original.slice(0, at) + '\n\n' + original.slice(at + 1);
+  const record = { id: 'inserted-break', original, text, spans: [
+    { start: 0, end: at, from: 0, to: at, identity: true },
+    { start: at, end: at + 2, from: at, to: at + 1, identity: false },
+    { start: at + 2, end: text.length, from: at + 1, to: original.length, identity: true }
+  ] };
+  const prepared = await prepareReadingUnit(unit('ocr', [first, second]), settings, undefined, async () => record);
+  assert.deepEqual(prepared.passages.map(piece => piece.text), ['First sentence.\n\nSecond sentence ends.', second]);
+  assert.equal(prepared.passages[1].sourceRanges[0].block, 1);
 });

@@ -1,17 +1,18 @@
 const pageText = unit => unit.blocks.join('\n\n');
-const sentenceEnd = /[.!?。！？](?:[”’"')\]]*)(?=\s|$)/g;
 export const needsContinuation = unit => !!unit.blocks.at(-1)?.trim() && !/[.!?。！？](?:[”’"')\]]*)\s*$/.test(unit.blocks.at(-1));
 
 // Include a continuation before committing the pending tail to speech. Text
 // already assigned to an earlier plan is consumed once, never rewritten later.
 export function continuousUnit(unit, following, consumed) {
   if (unit.locations) return unit;
-  const blocks = [], locations = [];
-  const append = (page, start, end) => {
+  const blocks = [], locations = [], separators = [];
+  const append = (page, start, end, continuation = false) => {
     let offset = 0;
     for (const [block, text] of page.blocks.entries()) {
       const from = Math.max(start, offset), to = Math.min(end, offset + text.length);
       if (to > from) {
+        if (blocks.length) separators.push(continuation ? '\n' : '\n\n');
+        continuation = false;
         blocks.push(text.slice(from - offset, to - offset));
         locations.push({ unit: page.id, block, offset: from - offset });
       }
@@ -23,12 +24,13 @@ export function continuousUnit(unit, following, consumed) {
   let tail = blocks.at(-1) || '';
   for (const next of following) {
     if (!tail || /[.!?。！？](?:[”’"')\]]*)\s*$/.test(tail)) break;
-    const value = pageText(next), match = [...value.matchAll(sentenceEnd)][0];
-    const end = match ? match.index + match[0].length : value.length;
-    append(next, 0, end); consumed.set(next.id, end);
-    tail = match ? '.' : value;
+    // The first block is the continuing paragraph, not merely its first
+    // sentence. Keep the page boundary as a visual line wrap for preparation.
+    const end = next.blocks[0]?.length || 0;
+    append(next, 0, end, true); consumed.set(next.id, end);
+    tail = next.blocks.length > 1 ? '.' : next.blocks[0];
   }
-  return { ...unit, blocks, locations, passages: [] };
+  return { ...unit, blocks, locations, separators, passages: [] };
 }
 
 export const fullyConsumed = (unit, consumed) => (consumed.get(unit.id) || 0) >= pageText(unit).length;

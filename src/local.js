@@ -10,6 +10,10 @@ async function request(path, options, fetcher) {
   let response;
   try { response = await fetcher(`${BASE}${path}`, options); }
   catch (error) { if (error.name === 'AbortError') throw error; throw unavailable(); }
+  if (response.status === 400) {
+    const value = await response.json().catch(() => null);
+    if (typeof value?.error === 'string' && value.error) throw new Error(value.error);
+  }
   if (!response.ok) throw new Error(response.status === 409 ? 'The local voice reference changed. Connect the local server again in Settings.'
     : response.status === 429 ? 'Local reader is busy. Try again shortly.' : 'Local Qwen could not complete this request. Check its terminal.');
   const value = await response.json();

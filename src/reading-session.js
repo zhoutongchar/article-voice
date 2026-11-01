@@ -1,5 +1,4 @@
 import { ReaderEngine } from './engine.js';
-import { splitPassages } from './article.js';
 import { WorkQueue } from './work-queue.js';
 import { continuousUnit, fullyConsumed, needsContinuation } from './continuous-text.js';
 
@@ -42,15 +41,12 @@ export class ReadingSession {
     engine.prepare = (unit, settings, signal) => this.prepare(unit, settings, signal, 0);
     engine.onEnd = () => this.advance();
   }
-  normalized(unit) {
-    return this.settings.provider === 'local' ? { ...unit, passages: splitPassages(unit.blocks.map(text => ({ text })), 160) } : unit;
-  }
   emit() { this.onChange({ queued: [...this.future.values()].filter(record => record.ready).length, preparing: !!this.pending, unit: this.unit }); }
   load(unit, settings) {
     this.unavailable = false; this.needsRefresh = false;
     this.version++; this.settings = { ...settings }; this.wantsPlay = false;
     this.abortFuture(); this.endAfter = null;
-    this.unit = unit; this.engine.load(this.normalized(unit), this.settings);
+    this.unit = unit; this.engine.load(unit, this.settings);
     this.displayed = unit.id; this.consumed.clear(); this.discovered = null;
     this.settling = unit.source?.prefetch ? this.cancelSource(this.version) : Promise.resolve();
     this.settling.catch(this.onError);
@@ -61,7 +57,7 @@ export class ReadingSession {
     const actual = await this.transport.request({ type: 'source-cancel' });
     if (version === this.version && actual && actual.id !== this.unit?.id) {
       this.unit = actual; this.displayed = actual.id; this.consumed.clear(); this.discovered = null; this.endAfter = null;
-      this.engine.load(this.normalized(actual), this.settings); this.emit();
+      this.engine.load(actual, this.settings); this.emit();
     }
   }
   async play() {
@@ -154,7 +150,7 @@ export class ReadingSession {
       record.engine = new ReaderEngine({ audio: this.createAudio(), cache: this.engine.cache,
         prepare: (unit, settings, signal) => this.prepare(unit, settings, signal, record.promoted ? 0 : 1),
         generate: (text, settings, signal) => this.generate(text, settings, signal, record.promoted ? 0 : 1) });
-      record.engine.load(this.normalized(unit), this.settings); this.future.set(unit.id, record);
+      record.engine.load(unit, this.settings); this.future.set(unit.id, record);
     }
   }
   async advance() {
