@@ -190,5 +190,16 @@ paragraph boundaries perfectly.
   formatter path, real speech/alignment artifacts, independent persistent cache
   replay and on-demand formatter loading.
 
-These checks do not establish new live Amazon coverage for 0.8.0. Earlier live
-Kindle results remain version-specific in the root README.
+The installed 0.8.0 app passed bundle/signature verification and its actual
+native-host protocol passed artifact validation, formatter bypass and cache
+replay. The installed Chrome extension's sample reading passed speech, original
+word highlighting, paragraph progression, formatter-disabled playback and 3x
+speed. Word clicks changed playback position during that sample check.
+
+A fresh native-only Kindle tab passed OCR reading, original-image word
+highlighting and lookahead preparation: the current page reached 5/5 chunks
+ready with another page ready. The Mac locked before the automatic page-turn
+result could be observed, so that part of the 0.8.0 installed-extension test is
+unfinished. Claiming the Kindle tab with browser automation reproduced the known
+protected-frame interruption; the native-only tab avoided it. Earlier complete
+live Kindle page-turn results remain version-specific in the root README.
