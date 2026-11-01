@@ -52,6 +52,7 @@ class ServerBoundaryTests(unittest.TestCase):
     def test_malformed_requests_fail_before_model_generation(self):
         for body in ({"text": [], "voice": "Ryan"}, {"text": "hello", "voice": "unknown"},
                      {"text": "hello", "voice": "Ryan", "language": "hi"},
+                     {"text": "hello", "voice": "Ryan", "prepare": "false"},
                      {"text": "x" * 2501, "voice": "Ryan"}):
             status, _, _ = self.request("POST", "/speech", json.dumps(body), {"Content-Type": "application/json"})
             self.assertEqual(status, 400)

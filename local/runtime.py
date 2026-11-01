@@ -6,13 +6,14 @@ import re
 import time
 from pathlib import Path
 from references import ReferenceLibrary
+from text_cleanup import TextFormatter, MODEL as FORMATTER_MODEL, REVISION as FORMATTER_REVISION, preparation_identity, source_spans, POLICY
 
 CONFIG = json.loads(Path(__file__).with_name("config.json").read_text())
 
 
 class SpeechRuntime:
     def __init__(self, data_directory=None, models_directory=None):
-        self.tts = self.aligner = None
+        self.tts = self.aligner = self.formatter = None
         directory = Path(data_directory) if data_directory else Path(__file__).resolve().parents[1] / ".cache"
         self.references = ReferenceLibrary(CONFIG, directory / "voice-references")
         self.reference_audio = {}
@@ -20,7 +21,7 @@ class SpeechRuntime:
 
     @property
     def ready(self):
-        return self.tts is not None and self.aligner is not None
+        return self.tts is not None and self.aligner is not None and self.formatter is not None
 
     def catalog(self):
         return self.references.catalog()
@@ -37,8 +38,9 @@ class SpeechRuntime:
         import mlx.core as mx
         import numpy as np
         def model_path(repo, revision):
-            if self.models_directory and repo in (CONFIG["model"], CONFIG["aligner"]):
-                return str(self.models_directory / ("narrator" if repo == CONFIG["model"] else "aligner"))
+            names = {CONFIG["model"]: "narrator", CONFIG["aligner"]: "aligner", FORMATTER_MODEL: "formatter"}
+            if self.models_directory and repo in names:
+                return str(self.models_directory / names[repo])
             try:
                 return snapshot_download(repo, revision=revision, local_files_only=True)
             except LocalEntryNotFoundError:
@@ -73,19 +75,27 @@ class SpeechRuntime:
         mx.clear_cache()
         self.tts = load_model(tts_path)
         self.aligner = load(aligner_path)
+        self.formatter = TextFormatter(model_path(FORMATTER_MODEL, FORMATTER_REVISION))
+        if not CONFIG["pipeline"].endswith(preparation_identity()[:12]):
+            raise ValueError("The speech preparation recipe changed. Rebuild Article Voice before using cached audio.")
 
-    def generate(self, text, voice, language, cancelled=None):
+    def generate(self, text, voice, language, cancelled=None, prepare=True):
         import mlx.core as mx
         import numpy as np
         from scipy.signal import resample_poly
         started = time.perf_counter()
         if self.tts is None:
             self.load()
+        prepared = self.formatter.prepare(text, cancelled) if prepare else {
+            "original": text, "text": text, "candidate": text, "status": "bypassed", "reason": "comparison-only",
+            "spans": source_spans(text, text), "model": FORMATTER_MODEL, "revision": FORMATTER_REVISION,
+            "policy": POLICY, "identity": preparation_identity(), "cached": False, "elapsed": 0}
+        spoken = prepared["text"]
         reference = self.references.voices[voice]
         chunks = []
         generated_tokens = 0
         # Streaming yields let Stop discard the remaining work after a short chunk.
-        for result in self.tts.generate(text=text, ref_audio=self.reference_audio[voice], ref_text=reference.transcript,
+        for result in self.tts.generate(text=spoken, ref_audio=self.reference_audio[voice], ref_text=reference.transcript,
                                         lang_code=CONFIG["languages"].get(language, "auto"), **CONFIG["generation"],
                                         stream=True, streaming_interval=1.0, max_tokens=1600, verbose=False):
             if cancelled and cancelled.is_set():
@@ -111,7 +121,7 @@ class SpeechRuntime:
         align_language = CONFIG["languages"].get(language)
         if not align_language:
             align_language = "Japanese" if re.search(r"[\u3040-\u30ff]", text) else "Korean" if re.search(r"[\uac00-\ud7af]", text) else "Chinese" if re.search(r"[\u3400-\u9fff]", text) else "English"
-        aligned = self.aligner.generate(resample_poly(audio, 2, 3).astype(np.float32), text=text, language=align_language)
+        aligned = self.aligner.generate(resample_poly(audio, 2, 3).astype(np.float32), text=spoken, language=align_language)
         words = []
         previous = 0
         for item in aligned:
@@ -126,4 +136,5 @@ class SpeechRuntime:
         mx.clear_cache()
         return {"pcm": base64.b64encode(pcm).decode("ascii"), "duration": duration, "words": words,
                 "sampleRate": 24000, "model": CONFIG["model"], "revision": CONFIG["revision"],
-                "pipeline": CONFIG["pipeline"], "referenceId": reference.identity, "elapsed": time.perf_counter() - started}
+                "pipeline": CONFIG["pipeline"], "referenceId": reference.identity, "elapsed": time.perf_counter() - started,
+                "preparation": prepared}

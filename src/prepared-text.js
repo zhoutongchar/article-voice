@@ -7,7 +7,8 @@ export function preparedTextProjection(record) {
   let prepared = 0, source = 0;
   for (const span of spans) {
     if (![span.start, span.end, span.from, span.to].every(Number.isInteger)
-      || span.start !== prepared || span.from !== source || span.end <= span.start || span.to <= span.from
+      || span.start !== prepared || span.from !== source || span.end < span.start || span.to < span.from
+      || span.end === span.start && span.to === span.from
       || span.end > record.text.length || span.to > record.original.length || typeof span.identity !== 'boolean'
       || span.identity && record.text.slice(span.start, span.end) !== record.original.slice(span.from, span.to))
       throw new Error('Invalid prepared text mapping');
@@ -25,7 +26,8 @@ export function preparedTextProjection(record) {
       if (start < b && end > a) hits.push(span.identity
         ? { start: c + Math.max(start, a) - a, end: c + Math.min(end, b) - a } : { start: c, end: d });
     }
-    return hits.length ? { start: hits[0].start, end: hits.at(-1).end } : null;
+    const visible = hits.filter(hit => hit.end > hit.start);
+    return visible.length ? { start: visible[0].start, end: visible.at(-1).end } : null;
   };
   return { source: (start, end) => project(start, end, false), prepared: (start, end) => project(start, end, true) };
 }

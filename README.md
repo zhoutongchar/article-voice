@@ -4,7 +4,7 @@ Listen to Chrome articles with natural voices running on your Mac. Follow the sp
 
 **[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1)** · [Mac app architecture and build](macos/README.md)
 
-The `main` source now includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. These changes are newer than the linked 0.5.1 binary preview. YouTube transcript support is a future adapter.
+The `main` source now includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. These changes and full-passage LLM preparation are newer than the linked 0.5.1 binary preview. Current source builds download 4.60 GB of model files; the linked older binary downloads 3.61 GB. YouTube transcript support is a future adapter.
 
 ![Article Voice's thin audio player](docs/images/minimal-player.png)
 
@@ -28,6 +28,7 @@ The separate **Article-Voice-Chrome.zip** download contains the same extension f
 
 ## Reading
 
+- **Automatic text preparation:** every new passage goes through a small local LLM before speech and alignment. It repairs formatting where possible; content-changing responses retain the original. No special text markings are required.
 - **Nine voices** use permanent reference recordings to keep the speaker consistent across passages and articles.
 - **Minimal / Compact / Full** buttons switch between a thin audio bar, a compact player, and a player with settings. All three include **Follow words**.
 - **Word highlighting and seeking:** the current passage stays green, the spoken word is yellow, and clicking a word moves playback there.
@@ -42,7 +43,7 @@ To update, install the newer app, click **Reload** on Article Voice in `chrome:/
 
 ## Local speech and privacy
 
-The Mac reader uses **Qwen3-TTS 1.7B Base, quantized to 4-bit**, through MLX-Audio, with **Qwen3-ForcedAligner 0.6B** for measured word timings. Each preset uses the same reference recording and transcript across passages. Model revisions, generation settings, download sizes, and SHA-256 digests are pinned in [`local/config.json`](local/config.json) and [`local/model-files.json`](local/model-files.json).
+Current source builds prepare every passage with **Qwen3 1.7B at 4-bit**, then use **Qwen3-TTS 1.7B Base at 4-bit** through MLX-Audio and **Qwen3-ForcedAligner 0.6B** for measured word timings. Each preset uses the same reference recording and transcript across passages. Model revisions, generation settings, download sizes, and SHA-256 digests are pinned in [`local/config.json`](local/config.json) and [`local/model-files.json`](local/model-files.json).
 
 Article text and generated speech stay on this Mac in the app flow. Setup downloads public model files from Hugging Face. There is no analytics, telemetry, paid API requirement, or automatic cloud fallback. The extension stores preferences locally and caches audio in IndexedDB with a 128 MB budget. Clearing audio cache retains the voice references.
 
@@ -75,7 +76,7 @@ npm run local:setup
 npm run local
 ```
 
-The standalone server binds only to `127.0.0.1:4318`. First startup prepares nine permanent voice references and downloads pinned narrator, reference-generator, and aligner weights (about **5.93 GB** total for development). The installed app instead includes prepared references and downloads only the narrator and aligner (**3.61 GB**). Once the standalone server reports ready, **Open local reader** and **Test local Qwen** in the browser harness use real speech. Stop the server with Control-C.
+The standalone server binds only to `127.0.0.1:4318`. First startup prepares nine permanent voice references and downloads pinned narrator, reference-generator, and aligner weights (about **6.91 GB** total for development). The installed app instead includes prepared references and downloads the narrator, aligner and passage formatter (**4.60 GB** in current source builds). Once the standalone server reports ready, **Open local reader** and **Test local Qwen** in the browser harness use real speech. Stop the server with Control-C.
 
 To package the Mac app after the references are prepared:
 
@@ -96,10 +97,12 @@ The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a git
 
 ## Verification
 
-An isolated [HTML speech preparation experiment](docs/text-cleanup-experiment.md)
-uses a small local LLM before Qwen synthesis and alignment, with source mappings
-for highlighting and word seeking. It is opt-in and does not change the installed
-reader's behavior.
+The 0.7.0 source enables [whole-passage preparation](docs/text-cleanup-experiment.md)
+before local speech and alignment. The installed Chrome reader, real native
+protocol and six-passage browser comparison passed with original-source
+highlighting, word seeking, content-preserving fallbacks and pitch-preserving
+playback. JavaScript checks
+passed 57 tests and Python checks passed 33 tests.
 
 For the 0.5.1 preview, prior local verification passed JavaScript checks and browser harness checks for the three layouts, playback continuity, whole-article mode, and the ten-second scroll suspension. The minimal player measured **480 × 52 CSS pixels**. Real Qwen checks exercised speech, measured alignment, nine voices, word seeking, cached replay, and playback around 3× on the test Mac. The user also confirmed that the installed extension's sample reading works.
 
@@ -111,4 +114,4 @@ The browser harness uses production reader modules with a development transport;
 
 ## Credits
 
-Article extraction uses [Mozilla Readability](https://github.com/mozilla/readability), with its [Apache-2.0 notice](public/READABILITY-LICENSE.txt). Speech uses [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), MLX Community quantizations, and [MLX-Audio](https://github.com/Blaizzy/mlx-audio). Model attribution and bundled third-party notices are in [`macos/Resources/Licenses`](macos/Resources/Licenses). This is an independent implementation and does not use Lisen code or branding.
+Article extraction uses [Mozilla Readability](https://github.com/mozilla/readability), with its [Apache-2.0 notice](public/READABILITY-LICENSE.txt). Passage preparation uses [Qwen3](https://huggingface.co/Qwen/Qwen3-1.7B) and [MLX-LM](https://github.com/ml-explore/mlx-lm). Speech uses [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS), MLX Community quantizations, and [MLX-Audio](https://github.com/Blaizzy/mlx-audio). Model attribution and bundled third-party notices are in [`macos/Resources/Licenses`](macos/Resources/Licenses). This is an independent implementation and does not use Lisen code or branding.

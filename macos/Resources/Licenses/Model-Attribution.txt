@@ -8,6 +8,9 @@ Reference generator: mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-4bit
   Revision: f35faf19b0cc2160865af64ecf0f22f83d335135
 Alignment: mlx-community/Qwen3-ForcedAligner-0.6B-8bit
   Revision: 0e1a68e91d815300c7c9754b2a7639378b23db15
+Passage preparation: mlx-community/Qwen3-1.7B-4bit
+  Revision: 3b1b1768f8f8cf8351c712464f906e86c2b8269e
+  Source model: https://huggingface.co/Qwen/Qwen3-1.7B
 
 The MLX Community conversions use quantized weights from the original Qwen models.
 The app's prepared voice-reference recordings use original public narration text
@@ -15,6 +18,8 @@ and the Qwen CustomVoice presets. They were generated with the pinned configurat
 in local/config.json. No user article or personal voice recording is bundled.
 
 MLX-Audio 0.6.3 is licensed under MIT; see MLX-Audio-MIT.txt.
+MLX-LM 0.32.2 is licensed under MIT; its distribution metadata and license are
+retained in the bundled Python packages.
 Other bundled Python dependencies retain their distribution metadata and license
 files under Resources/PythonPackages. The Python standard library retains its
 provided license files under Resources/Python.

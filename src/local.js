@@ -46,7 +46,7 @@ export async function localSynthesize(text, settings, signal, fetcher = fetch) {
       || item.start < previous || item.end < item.start || item.end > duration + .01) throw new Error('Local Qwen returned invalid word timestamps.');
     previous = item.start;
   }
-  return { pcm, duration, words: value.words, referenceId: value.referenceId };
+  return { pcm, duration, words: value.words, referenceId: value.referenceId, preparation: value.preparation };
 }
 
 function validateIdentity(value) {

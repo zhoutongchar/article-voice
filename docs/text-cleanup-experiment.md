@@ -1,83 +1,98 @@
-# Local HTML speech preparation experiment
+# Whole-passage speech preparation
 
-This is an opt-in development experiment, not a new default in the installed
-Chrome extension. It uses Qwen3 0.6B at 4-bit precision (about 335 MB of weights,
-351 MB for the downloaded snapshot) in an isolated Python environment. It does
-not replace or restart the existing voice engine. No article text goes to a
-cloud model.
+Starting with 0.7.0, every newly generated local speech passage goes through
+Qwen3 1.7B at 4-bit precision before Qwen3-TTS and its forced aligner. It does
+not select passages by a list of known formatting problems. Clean text,
+unfamiliar formatting and ordinary prose all use the same prompt. An in-memory
+cache reuses preparation for an identical passage; cached audio skips synthesis
+and preparation entirely.
 
-## What the actual HTML showed
+## Pipeline
 
-The current DOM text mapper preserves ordinary whitespace, but loses math
-structure: a rendered subscript such as `sₜ` becomes `st`, and `aₜ` becomes `at`.
-HTML still provides the original LaTeX annotation. Reading that annotation
-alongside its original source span is more reliable than guessing from flat text.
+1. The source adapter extracts text and retains its original page coordinates.
+2. The complete requested passage is sent to the local LLM. No math annotations,
+   classifiers or predefined expression grammar choose what reaches the model.
+3. After inference, content checks accept the result or retain the original.
+4. Qwen3-TTS speaks the accepted text. The forced aligner receives that same text
+   and the actual generated audio.
+5. The reader maps measured words back onto the original source for highlights
+   and word clicks. The comparison preview also retains an explicit UTF-16 map.
 
-A first trial asking the 0.6B model to clean six real, flattened HTML paragraphs
-deleted identifiers from three of them. That approach is not enabled. The
-constrained experiment copies prose exactly and asks the model to verbalize
-explicit math expressions. A small grammar verifies supported identifiers,
-subscripts, exponents, equality, digits and operators. Model answers that change
-the expression are declined; unsupported expressions keep their original text.
-This is not a general math reader, prose editor or OCR correction engine.
+The prompt requests minimal formatting repair while preserving words, names,
+identifiers, numbers, negations, order and language. Content checks compare the
+ordered letters/numbers after compatibility normalization, numeric literals,
+semantic operators and protected literals. This permits spacing, line-wrapping
+and presentation changes without accepting paraphrases or dropped identifiers.
+A rejected or incomplete response uses the original passage. Cancellation stops
+preparation before a result can be published or cached.
 
-## Pipeline and source positions
+These checks do not prove semantic equivalence: punctuation and word boundaries can affect meaning,
+and the model may leave a formatting issue unchanged. This is formatting repair,
+not summarization or arbitrary notation expansion. Some inputs still use their
+original text. The earlier math-only route and its expression grammar have been
+removed.
 
-1. Supply extracted HTML text and its explicitly identified math spans, with
-   their LaTeX annotations. Offsets are UTF-16, matching the browser.
-2. The local formatter prepares speech text and a mapping from prepared spans
-   to the original source spans. Prose is preserved character for character.
-3. The existing local Qwen voice engine generates that prepared text and runs
-   its forced aligner against the same prepared text and actual audio.
-4. The browser projects aligned words through the source mapping. For example,
-   all words in “s subscript t” highlight the original `sₜ`. Source word clicks
-   use the reverse mapping to seek to the prepared audio.
+## Installation and cache identity
 
-The aligner cannot restore identifiers that an LLM deleted or verify the truth
-of rewritten content. Validation and source mapping happen before synthesis.
-The generic installed HTML extractor does not yet provide this experiment's
-structured math input automatically; captured samples and the public fixture
-provide it explicitly. Full Chrome integration requires that extraction boundary
-and the formatter's installation/lifecycle to be connected, with broader tests.
+The Mac app brings MLX-LM alongside its existing Python inference runtime.
+Its model installer downloads and verifies the formatter using the same pinned,
+resumable manifest as the narrator and aligner. The formatter adds approximately
+984 MB; current source builds prepare about 4.60 GB of model files in total.
+The older linked 0.5.1 binary predates this feature.
 
-## Try it locally
+Model, revision, prompt, decoding settings and policy determine a preparation
+identity embedded in the speech pipeline ID. Changing that recipe invalidates
+old audio cache keys. Reference voices and playback speed are unchanged. Source
+text and model responses remain local; model setup only downloads public files.
+The formatter holds at most 128 prepared passages in memory and exits with the
+app-managed voice engine.
 
-From the repository root, create the separate formatter environment:
+## Compare original and prepared speech
+
+With the current local engine running:
 
 ```sh
-uv venv --python .venv/bin/python .cache/cleanup-venv
-uv pip install --python .cache/cleanup-venv/bin/python -r local/cleanup-requirements-lock.txt
-.cache/cleanup-venv/bin/python scripts/try-text-cleanup.py tests/cleanup-input.json --speech
+.venv/bin/python scripts/try-text-cleanup.py tests/cleanup-input.json --speech
 npm run dev
 ```
 
-Open `http://127.0.0.1:4317/tests/cleanup.html`. The installed Article Voice
-engine must already be ready; the script uses its configured loopback port, or
-`--port` can select an existing standalone engine. The model revision is pinned
-in `local/text_cleanup.py` and downloaded once. No remote model code is loaded.
+Open `http://127.0.0.1:4317/tests/cleanup.html`. The comparison script uses the
+installed engine's configured loopback port. `--port` selects another compatible
+local engine; omit `--speech` to inspect only LLM formatting. Input is an array
+of objects containing `text` and an optional `language`, without marked spans.
 
-The preview has original/prepared audio, a passage selector, clickable original
-HTML, word highlighting, pause/stop and 1–3× speed. **Run browser checks** uses
-the production reader engine and actual generated audio and measured alignments.
-It verifies playback, source expression marks, clicking an expression to seek,
-3× pitch-preserving playback, subsequent prose coordinates and Stop cleanup.
+The diagnostic HTTP option `prepare: false` generates the original comparison
+clip. Normal Chrome requests do not expose or send that override: preparation
+is on by default. The prepared clip carries the original, candidate, accepted
+text, status, reason and formatter identity. The script refuses a speech service
+that did not use the current preparation recipe.
 
-For another sample, pass a JSON array with `text` and `math` members as in
-`tests/cleanup-input.json`. The script writes original text and audio to the
-gitignored `.cache/text-cleanup/`; keep private inputs local. The development
-server's loopback-only preview serves this directory to that browser.
+Reports and audio are written to the gitignored `.cache/text-cleanup/`. They
+contain source text; keep private inputs local. The loopback development server
+serves that local preview. These developer artifacts are not packaged in the app.
 
-## Measured trial
+## Verification scope
 
-On the test Mac, three real HTML paragraphs produced six real Qwen clips:
-original and prepared versions. All four marked expressions were accepted with
-prose preserved. Formatter loading took about 1.1 seconds. The separate
-nine-expression trial measured about 0.02–0.07 seconds per expression after loading.
-These are warm local measurements for very short math expressions, not a
-benchmark of arbitrary prose or equations. Cached expressions reuse their result.
+The installed 0.7.0 app and reloaded Chrome extension were exercised on the
+included `tests/whole-passage.html` article. Playback generated all seven pieces,
+highlighted original HTML words, continued into later paragraphs, and supported
+forward/backward word clicks, pause, Follow words and Stop. The production native
+host separately returned actual Qwen audio, preparation metadata and measured
+word timings for a passage whose sentence spacing was repaired.
 
-The nine-expression standalone model trial covered simple variables, subscripts,
-`t+1`, equality and a square. Complex equations, other languages, general prose
-repair, clean-machine packaging and installed-extension integration remain
-unverified. The Python and JavaScript boundary tests exercise UTF-16 positions,
-mapping completeness, unsupported expressions and content-preservation failures.
+The browser comparison checks
+shifted source highlights, clicking original words to seek prepared audio,
+pitch-preserving 3x playback, following word coordinates and Stop cleanup.
+Its six passages include formatting repairs, unchanged clean text, unfamiliar
+formatting and a rejected response to an instruction inside the source passage.
+
+The broader model trial also covered line-wrapped words, invisible characters,
+bullets, signed decimals, identifiers and Chinese text. The 0.6B trial changed
+content too often; 1.7B plus post-inference checks was used for integration.
+Quality remains limited on some inputs: Chinese formatting and some wrapped
+words were not reliably repaired, while rejected responses kept the original.
+
+Python boundary checks cover inference for every unmarked passage, content and
+literal changes, caching, cancellation and incomplete output. JavaScript checks
+cover UTF-16 mapping, insertions/deletions, source coverage and word alignment.
+Clean-machine installation and every website/language remain unverified.

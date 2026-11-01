@@ -1,4 +1,4 @@
-import { textMap, rangeFor, wordFromPoint } from '../src/article.js';
+import { rangeFor, wordFromPoint } from '../src/article.js';
 import { ReaderEngine } from '../src/engine.js';
 import { preparedTextProjection } from '../src/prepared-text.js';
 
@@ -21,21 +21,13 @@ const engine = new ReaderEngine({ audio: $('audio'), cache: { get: async () => n
 });
 function select(index) {
   engine.stop(); record = data.reports[index]; projection = preparedTextProjection(record);
-  $('source').replaceChildren(); let cursor = 0;
-  for (const item of record.decisions) {
-    $('source').append(document.createTextNode(record.original.slice(cursor, item.start)));
-    const span = document.createElement('span'); span.className = 'math'; span.dataset.math = '';
-    const match = item.tex.match(/^([A-Za-z])_\{?([A-Za-z0-9])(?:\+([0-9]))?\}?$/);
-    if (match) { const name = document.createElement('i'), sub = document.createElement('sub'); name.textContent = match[1]; sub.textContent = match[2] + (match[3] ? '+' + match[3] : ''); span.append(name, sub); }
-    else span.textContent = item.original;
-    $('source').append(span); cursor = item.end;
-  }
-  $('source').append(document.createTextNode(record.original.slice(cursor)));
-  source = textMap($('source'));
-  if (source.text !== record.original) throw new Error('Preview DOM and extracted source text disagree');
+  $('source').textContent = record.original;
+  const node = $('source').firstChild;
+  source = { element: $('source'), text: record.original,
+    points: Array.from({ length: record.original.length }, (_, offset) => ({ node, offset })) };
   $('before').textContent = 'Original: ' + record.original;
   $('after').textContent = 'Prepared: ' + record.text;
-  $('details').textContent = `${data.model} · ${record.decisions.filter(x => x.accepted).length} verified expressions · prose preserved · real Qwen audio and forced alignment`;
+  $('details').textContent = `${data.model} · whole passage sent to LLM · ${record.status}${record.reason ? ' (' + record.reason + ')' : ''} · ${record.elapsed.toFixed(3)}s · real Qwen audio and forced alignment`;
   load('prepared');
 }
 function load(value) {
@@ -69,36 +61,42 @@ $('run-checks').onclick = async () => {
     await wait(() => engine.state === 'playing' && engine.audio.currentTime > .15, 'Real Qwen audio did not play');
     pass('Prepared HTML text plays actual Qwen audio with measured aligner timestamps');
     engine.pause();
-    const expanded = record.spans.find(span => !span.identity);
     const words = engine.segments[0].result.words;
-    const mathWord = words.find(word => word.from >= expanded.start && word.to <= expanded.end && /^sub/.test(word.word));
-    if (!mathWord) throw new Error('Aligner did not time the spoken subscript');
-    engine.audio.currentTime = mathWord.start; engine.lastHighlight = null; engine.tick();
-    await wait(() => CSS.highlights.get('cleanup-word')?.size, 'Original expression is not highlighted');
+    const changedWord = words.find(word => { const span = word.from != null && projection.source(word.from, word.to); return span && span.start !== word.from; });
+    if (!changedWord) throw new Error('First example did not exercise shifted word coordinates');
+    const originalSpan = projection.source(changedWord.from, changedWord.to);
+    engine.audio.currentTime = changedWord.start; engine.lastHighlight = null; engine.tick();
+    await wait(() => CSS.highlights.get('cleanup-word')?.size, 'Original word is not highlighted');
     const marked = [...CSS.highlights.get('cleanup-word')][0];
-    if (marked.toString() !== record.original.slice(expanded.from, expanded.to)) throw new Error('Spoken expansion highlighted the wrong source');
-    pass('Spoken “subscript” highlights the original HTML expression rather than shifting later words');
-    const element = $('source').querySelector('[data-math]');
-    const glyph = document.createRange(), node = element.querySelector('i').firstChild;
-    glyph.setStart(node, 0); glyph.setEnd(node, 1);
+    if (marked.toString() !== record.original.slice(originalSpan.start, originalSpan.end)) throw new Error('Prepared speech highlighted the wrong source');
+    pass('LLM edits shift speech offsets while highlighting stays on the original HTML word');
+    const element = $('source'), glyph = rangeFor(source, originalSpan.start, originalSpan.end);
     const rect = glyph.getClientRects()[0]; const x = (rect.left + rect.right) / 2, y = (rect.top + rect.bottom) / 2;
     const before = clicks;
     element.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
-    await wait(() => clicks > before && engine.state === 'playing', 'Clicking original math did not seek and play');
-    const first = words.find(word => word.from >= expanded.start && word.from < expanded.end);
-    if (Math.abs(engine.audio.currentTime - first.start) > .3) throw new Error('Original math sought to the wrong audio word');
-    engine.pause(); pass('Clicking the original HTML expression seeks to its prepared audio');
+    await wait(() => clicks > before && engine.state === 'playing', 'Clicking the original word did not seek and play');
+    if (Math.abs(engine.audio.currentTime - changedWord.start) > .3) throw new Error('Original word sought to the wrong audio word');
+    engine.pause(); pass('Clicking the original HTML word seeks to its prepared audio');
     $('speed').value = '3'; engine.setSpeed(3); await engine.play();
     const start = engine.audio.currentTime, wall = performance.now();
     await new Promise(resolve => setTimeout(resolve, 450));
     const rate = (engine.audio.currentTime - start) / ((performance.now() - wall) / 1000);
     if (Math.abs(rate - 3) > .5 || !engine.audio.preservesPitch) throw new Error('3× playback did not preserve rate and pitch setting');
     engine.pause(); pass(`3× playback measured at ${rate.toFixed(2)}× with pitch preservation`);
-    const ordinary = words.find(word => word.from > expanded.end + 1);
+    const ordinary = words.at(-1);
     engine.audio.currentTime = ordinary.start; engine.lastHighlight = null; engine.tick();
     const plain = projection.source(ordinary.from, ordinary.to);
     if ([...CSS.highlights.get('cleanup-word')][0].toString() !== record.original.slice(plain.start, plain.end)) throw new Error('Prose highlight drifted after the expression');
     pass('Following prose retains its original word coordinates');
+    for (const item of data.reports) {
+      const map = preparedTextProjection(item);
+      const actual = item.preparedAudio.preparation;
+      if (!item.identity || !['formatted', 'unchanged', 'rejected'].includes(item.status)
+        || actual?.identity !== item.identity || actual?.original !== item.original || actual?.text !== item.text)
+        throw new Error('A passage skipped whole-passage LLM preparation');
+      if (!map.source(0, item.text.length)) throw new Error('A prepared passage lost source coverage');
+    }
+    pass(`All ${data.reports.length} passages used the full LLM path, including clean text and unfamiliar formatting`);
     engine.stop(); if (CSS.highlights.has('cleanup-word')) throw new Error('Stop left a word highlighted');
     pass('Stop clears playback and marks'); document.body.dataset.cleanupResult = 'passed';
   } catch (error) { output.textContent = [...lines, 'FAIL · ' + error.message].join('\n'); document.body.dataset.cleanupResult = 'failed'; }

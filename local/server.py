@@ -115,6 +115,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected a short JSON passage")
             request = json.loads(self.rfile.read(length))
             text, voice, language = request.get("text"), request.get("voice"), request.get("language", "")
+            prepare = request.get("prepare", True)
+            if type(prepare) is not bool:
+                raise ValueError("Invalid preparation mode")
             if not isinstance(text, str) or not text.strip() or len(text) > 2500:
                 raise ValueError("Choose a passage of 1–2500 characters")
             if voice not in {v["id"] for v in CONFIG["voices"]}:
@@ -133,9 +136,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         cancelled = threading.Event()
         if self.path == "/speech/stream":
-            self.stream(text, voice, language, cancelled)
+            self.stream(text, voice, language, cancelled, prepare)
             return
-        future = worker.submit(runtime.generate, text, voice, language, cancelled)
+        future = worker.submit(runtime.generate, text, voice, language, cancelled, **({} if prepare else {"prepare": False}))
         future.add_done_callback(lambda _: slots.release())
         try:
             while True:
@@ -158,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
         readable, _, _ = select.select([self.connection], [], [], 0)
         return bool(readable and not self.connection.recv(1, socket.MSG_PEEK))
 
-    def stream(self, text, voice, language, cancelled):
+    def stream(self, text, voice, language, cancelled, prepare=True):
         events = queue.Queue(maxsize=2)
 
         def emit(event):
@@ -171,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
 
         def produce():
             try:
-                for event in aligned_events(runtime, text, voice, language, cancelled):
+                for event in aligned_events(runtime, text, voice, language, cancelled, prepare):
                     if cancelled.is_set():
                         return
                     emit(event)

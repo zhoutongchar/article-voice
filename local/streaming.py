@@ -27,11 +27,11 @@ def pieces(text, limit=160):
         cursor = end
 
 
-def aligned_events(runtime, text, voice, language, cancelled):
+def aligned_events(runtime, text, voice, language, cancelled, prepare=True):
     for value, offset in pieces(text):
         if cancelled.is_set():
             raise InterruptedError("Reading cancelled")
-        clip = runtime.generate(value, voice, language, cancelled)
+        clip = runtime.generate(value, voice, language, cancelled, **({} if prepare else {"prepare": False}))
         if cancelled.is_set():
             raise InterruptedError("Reading cancelled")
         yield {"type": "clip", "text": value, "offset": offset, "clip": clip}
@@ -73,11 +73,11 @@ class RemoteRuntime:
     def reference_identity(self, voice):
         return next((item["referenceId"] for item in self._voices if item["id"] == voice), None)
 
-    def generate(self, text, voice, language, cancelled=None):
+    def generate(self, text, voice, language, cancelled=None, prepare=True):
         if cancelled and cancelled.is_set():
             raise InterruptedError("Reading cancelled")
         result = self._request("/speech", {"text": text, "voice": voice, "language": language,
-                                          "referenceId": self.reference_identity(voice)})
+                                          "referenceId": self.reference_identity(voice), "prepare": prepare})
         if cancelled and cancelled.is_set():
             raise InterruptedError("Reading cancelled")
         return result

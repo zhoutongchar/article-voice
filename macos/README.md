@@ -7,20 +7,25 @@ Requires Apple Silicon and macOS 26 or later. This build has been exercised on a
 ## User setup
 
 1. Download and open **Article Voice**. Choose **Install Article Voice**. It installs into the user's Applications folder and reopens itself.
-2. Voices prepare automatically. First setup downloads 3.61 GB of pinned narrator and aligner files, with progress, pause/resume, and SHA-256 verification. Already verified files are reused; an existing Hugging Face model cache is imported without downloading it again. Nine permanent voice references are included in the app.
+2. Voices prepare automatically. First setup downloads 4.60 GB of pinned narrator, aligner and passage formatter files, with progress, pause/resume, and SHA-256 verification. Already verified files are reused; an existing Hugging Face model cache is imported without downloading it again. Nine permanent voice references are included in the app.
 3. Choose **Connect Chrome**, add the extension, and start reading. The app detects the extension's background heartbeat through its native host. Its welcome page includes **Try a reading**, which opens a bundled sample article and its reader.
 
 After setup, the Mac setup window can be closed or the app quit. Chrome starts the bundled speech helper on demand. Its local engine exits after ten minutes without requests and restarts when needed. No Python installation, terminal command, API key, or separate model management is needed.
 
 ### GitHub preview and store distribution
 
-The [GitHub preview release](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1) distributes the app ZIP and the extension ZIP. It is ad-hoc signed and unnotarized. A published Chrome Web Store listing and a Developer ID signing identity are not available. Connect it once by loading its `Contents/Resources/ChromeExtension` directory with Chrome's **Load unpacked** action. The built app includes this directory. Chrome Developer mode must remain enabled. See the root README for the complete installation steps and macOS opening guidance.
+The older [GitHub preview release](https://github.com/zhoutongchar/article-voice/releases/tag/v0.5.1) distributes the app ZIP and extension ZIP before full-passage preparation; current source builds include the formatter. It is ad-hoc signed and unnotarized. A published Chrome Web Store listing and a Developer ID signing identity are not available. Connect it once by loading its `Contents/Resources/ChromeExtension` directory with Chrome's **Load unpacked** action. The built app includes this directory. Chrome Developer mode must remain enabled. See the root README for the complete installation steps and macOS opening guidance.
 
 For a future store release, upload `macos/build/Article Voice Chrome.zip` to the Chrome Web Store. Use the listing's extension ID and public key in `chrome/connection.json`, and set its HTTPS `storeUrl`. The ID must match that public key. The app's Connect Chrome button then opens the real listing. Chrome still requires the user to approve installation.
 
 A distributable Mac build also needs Developer ID signing and notarization. Set `ARTICLE_VOICE_SIGN_IDENTITY` and `ARTICLE_VOICE_NOTARY_PROFILE`, then build with `--release`. That mode fails early if release configuration is incomplete. The signing/notarization path has not been exercised here; preview signing has passed.
 
 ## Architecture and privacy
+
+Every new speech passage goes through the bundled Qwen3 1.7B formatter before
+Qwen3-TTS and forced alignment. Post-inference content checks accept formatting
+repairs or retain the original passage. No preclassification selects which text
+goes to the LLM. See [whole-passage preparation](../docs/text-cleanup-experiment.md).
 
 - The app registers `com.articlevoice.chrome` in the user's Chrome NativeMessagingHosts directory, restricted to the configured extension ID. An existing changed manifest is backed up before replacement.
 - Chrome's native host is a small executable inside the app. It runs the bundled Python runtime and supports only heartbeat, status, voice catalog, and speech operations. It does not expose a general command interface.
@@ -30,7 +35,7 @@ A distributable Mac build also needs Developer ID signing and notarization. Set 
 - Speech text stays on the Mac. Model setup downloads public files from Hugging Face; speech uses the bundled local runtime. The optional Cartesia adapter is retained for development; the Mac reader fixes the provider to local speech.
 - The extension's audio cache includes the fixed voice reference identity. Playback speed changes and word seeking reuse generated audio. Local text is split into short aligned pieces, so listening can begin before the full paragraph is generated. At 3×, generation may still need to catch up.
 
-The current app download is approximately 0.6 GB before compression, plus 3.61 GB of model files at setup. Final compressed sizes are reported by the build artifacts.
+The current app download is approximately 0.6 GB before compression, plus 4.60 GB of model files at setup. Final compressed sizes are reported by the build artifacts.
 
 ## Build
 
@@ -57,7 +62,7 @@ swift run --package-path macos ArticleVoiceCoreChecks
 
 The setup suite exercises real HTTP range resume, servers ignoring ranges, digest rejection, verified cache reuse, framing, native origin checks, and heartbeat recording without waking the speech engine. JavaScript tests exercise alarm/startup/retry behavior, native audio chunk assembly, aborted/disconnected ports, incomplete messages, source coordinates, word seeking, speed, cache identity, and existing provider behavior. Swift checks cover heartbeat expiry, reconnection, closed Chrome, startup/wake grace, and legacy, malformed, foreign, or future receipts. No test removes the user's extension.
 
-The real app install, cached model preparation, cold local-engine startup, nine-voice catalog, and fresh Qwen speech through the production native-host protocol passed on this Mac. A real pinned configuration file also downloaded from Hugging Face and passed its packaged digest check. Resume mechanics use a controlled HTTP server; a full uncached 3.61 GB network download has not been repeated.
+The real app install, cached model preparation, cold local-engine startup, nine-voice catalog, and fresh Qwen speech through the production native-host protocol passed on this Mac. A real pinned configuration file also downloaded from Hugging Face and passed its packaged digest check. Resume mechanics use a controlled HTTP server; a full uncached 4.60 GB network download has not been repeated.
 
 The app-installed native host also restarted a stopped, verified test-owned voice engine with the setup app closed, returning nine voices in 3.8 seconds. A separate gateway exited cleanly after its idle timeout while preserving the production engine.
 

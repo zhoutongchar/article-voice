@@ -3,12 +3,14 @@ import copy
 import sys
 import tempfile
 import unittest
+from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local"))
 from references import ReferenceLibrary
 from runtime import CONFIG, SpeechRuntime
+from text_cleanup import TextFormatter
 
 
 class ReferenceTests(unittest.TestCase):
@@ -65,11 +67,22 @@ class ReferenceTests(unittest.TestCase):
                 yield SimpleNamespace(audio=mx.array(np.zeros(24000, dtype=np.float32)), token_count=12)
             runtime.tts = SimpleNamespace(generate=generate, sample_rate=24000)
             runtime.aligner = SimpleNamespace(generate=lambda audio, **kwargs: [SimpleNamespace(text=kwargs['text'], start_time=0, end_time=.8)])
-            for text in ('First paragraph', 'Second paragraph', 'Third paragraph'):
+            runtime.formatter = object.__new__(TextFormatter)
+            runtime.formatter.cache = OrderedDict()
+            prepared = []
+            def infer(text, cancelled=None):
+                prepared.append(text)
+                return text.replace('paragraph .', 'paragraph.'), None
+            runtime.formatter.infer = infer
+            for text in ('First paragraph .', 'Second paragraph .', 'Third paragraph .'):
                 result = runtime.generate(text, 'Ryan', 'en')
                 self.assertEqual(result['referenceId'], reference.identity)
+                self.assertEqual(result['preparation']['status'], 'formatted')
+                self.assertEqual(result['words'][0]['word'], text.replace('paragraph .', 'paragraph.'))
             self.assertEqual(len(calls), 3)
+            self.assertEqual(prepared, ['First paragraph .', 'Second paragraph .', 'Third paragraph .'])
             for call in calls:
+                self.assertTrue(call['text'].endswith('paragraph.'))
                 self.assertIs(call['ref_audio'], runtime.reference_audio['Ryan'])
                 self.assertEqual(call['ref_text'], reference.transcript)
                 self.assertNotIn('voice', call, 'Base cloning must not receive a preset speaker name')

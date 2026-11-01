@@ -1,4 +1,5 @@
 mlx-audio==0.6.3
+mlx-lm==0.32.2
 soundfile==0.14.0
 nagisa==0.2.11
 soynlp==0.0.493

@@ -30,3 +30,16 @@ test('mapping rejects gaps, overlaps, altered prose and incomplete source covera
   assert.equal(projection.source(0, 99), null);
   assert.equal(projection.prepared(-1, 3), null);
 });
+
+test('formatting deletions and insertions retain later UTF-16 word positions', () => {
+  const result = { original: '😀 A re-\nmarkable result .', text: '😀 A remarkable result.', spans: [
+    {start:0,end:7,from:0,to:7,identity:true},
+    {start:7,end:7,from:7,to:9,identity:false},
+    {start:7,end:22,from:9,to:24,identity:true},
+    {start:22,end:22,from:24,to:25,identity:false},
+    {start:22,end:23,from:25,to:26,identity:true}
+  ] };
+  const projection = preparedTextProjection(result);
+  assert.deepEqual(projection.source(5,15), {start:5,end:17});
+  assert.deepEqual(projection.prepared(9,17), {start:7,end:15});
+});
