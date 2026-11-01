@@ -1,7 +1,11 @@
 # Reading continuity investigation
 
-Unreleased source changes, tested November 1, 2026. Chrome and the installed
-extension were not opened, reloaded or updated for this investigation.
+Changes included in the 0.8.2 developer build, tested November 1, 2026. Chrome
+and the installed extension were not opened, reloaded or updated during the
+initial investigation below. The subsequent 0.8.2 packaging check installed the
+app and bundled extension locally, verified their versions and matching build
+bytes, and passed strict bundle signature verification. Chrome activation and
+live Kindle playback have not yet been verified for this build.
 
 ## Reproduction and causes
 
