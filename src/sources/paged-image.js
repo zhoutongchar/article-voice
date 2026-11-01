@@ -32,7 +32,7 @@ export function createPagedImageSource({ id, access, recognize }) {
       const direction = index > actual ? 1 : -1;
       const image = await access.turn(direction, signal);
       if (!image || image.id !== units[actual + direction]?.id)
-        throw new Error('The book position changed. Close the reader and reopen it on the page you want.');
+        throw new Error(`The reader returned a different page while going ${direction > 0 ? 'forward' : 'back'}.`);
       actual += direction;
     }
   }
@@ -41,10 +41,10 @@ export function createPagedImageSource({ id, access, recognize }) {
     // explicit failure, and the user keeps access to Kindle's own controls.
     try {
       await move(current);
-      if (units[current] && (await access.capture()).id !== units[current].id) throw new Error('Position mismatch');
+      if (units[current] && (await access.capture()).id !== units[current].id) throw new Error('The displayed page does not match the page being read.');
     } catch (cause) {
       invalid = true;
-      throw new Error(`Could not return to ${units[current]?.label || 'your reading position'}. Reading stopped. Close the player and use the book’s navigation.`, { cause });
+      throw new Error(`Could not return to ${units[current]?.label || 'your reading position'}. ${cause.message} Reading stopped. Close the player and use the book’s navigation.`, { cause });
     } finally { access.uncover(); }
   }
   const source = {

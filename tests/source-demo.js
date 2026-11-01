@@ -10,7 +10,7 @@ const pages = [
 ];
 let index = 0, reader, adapter;
 const output = document.getElementById('result');
-let labelTimer;
+let labelTimer, navigationBusy = false, refusedTurns = 0;
 async function render() {
   clearTimeout(labelTimer);
   const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1000;
@@ -49,11 +49,17 @@ const bindPageTurn = (id, direction) => {
   const button = document.getElementById(id), container = button.parentElement;
   container.addEventListener('mousedown', event => {
     if (button.disabled || event.button !== 0) return;
+    if (navigationBusy) { refusedTurns++; return; }
     event.stopPropagation();
     const release = event => {
       container.removeEventListener('mouseup', release);
       event.stopPropagation(); event.preventDefault();
-      if (index + direction >= 0 && index + direction < pages.length) { index += direction; render(); }
+      if (index + direction >= 0 && index + direction < pages.length) {
+        navigationBusy = true;
+        const loader = document.querySelector('.loader'); loader.append(document.createElement('span'));
+        index += direction;
+        render().then(() => setTimeout(() => { navigationBusy = false; loader.replaceChildren(); }, 300));
+      }
     };
     container.addEventListener('mouseup', release, { once: true });
   });
@@ -84,7 +90,12 @@ async function openReader() {
 document.getElementById('open-reader').onclick = openReader;
 const wait = async (predicate, message, timeout = 30_000) => {
   const end = performance.now() + timeout;
-  while (performance.now() < end) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 30)); }
+  while (performance.now() < end) {
+    const player = reader?.frame.contentWindow.testPlayer;
+    if (player?.session.unavailable) throw new Error(reader.frame.contentWindow.document.getElementById('error').textContent || message);
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
   throw new Error(message);
 };
 document.getElementById('run-checks').onclick = async event => {
@@ -112,7 +123,8 @@ document.getElementById('run-checks').onclick = async event => {
     await wait(() => player.session.future.size === 2 && [...player.session.future.values()].every(record => record.ready), 'Two future pages were not prepared');
     await wait(() => !player.session.pending, 'Page preparation did not settle');
     if (index !== 0 || document.querySelector('[data-article-voice-page]') || document.getElementById('main-content').inert) throw new Error('Prefetch did not restore the visible page');
-    pass('Two pages of text and speech queue ahead; restoration survives missing/delayed location labels');
+    if (refusedTurns) throw new Error('Navigation was attempted before the previous turn settled');
+    pass('Two pages queue ahead; restoration waits for each turn to settle and survives changing location labels');
     await wait(() => document.querySelector('#article-voice-marks > div:last-child')?.childElementCount > 0, 'OCR word overlay is missing');
     if (!$('follow').checked) throw new Error('Follow words is not available');
     pass('Spoken words are marked over the image; Follow words remains available');

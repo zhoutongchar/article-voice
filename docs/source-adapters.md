@@ -43,6 +43,8 @@ Kindle unit identity combines the book ID and captured image digest. The optiona
 
 Kindle's chevron containers handle mouse press/release for navigation. The adapter sends one bubbling `mousedown`/`mouseup` gesture through those DOM handlers and verifies a completed image change. A synthetic `click()` alone only reaches metrics listeners in the inspected reader build and does not navigate. The gesture fixture preserves that distinction.
 
+A new image can appear before Kindle accepts another turn. The inspected reader throttles each direction for 100 ms and also has a renderer busy gate. Capture and navigation therefore share one readiness check: the loading indicator must clear, page-view animations must finish, and the image must stay stable for 125 ms. Restoration uses this same boundary for each backward turn. Restoration errors preserve their underlying reason instead of discarding it.
+
 The Kindle prefetch mechanism temporarily visits upcoming pages, so Amazon may record those pages as visited. Restoration returns the visible page; it does not promise to undo Kindle’s reading-history synchronization. Resizing or changing Kindle layout invalidates page geometry and requires reopening the reader.
 
 ## Adding another source
@@ -57,4 +59,4 @@ Run `npm run check`, the Python boundary suite, and `npm run mac:check`. Build t
 
 Run `npm run dev`, open `http://127.0.0.1:4317/tests/source.html`, and choose **Run adapter checks**. This uses the production Kindle adapter, actual Apple Vision OCR, and explicitly labelled recorded speech. It checks queued units, source restoration, word marks, 3×, page completion, pause, stop, and cleanup. Add `?local=1` to use real Qwen through the app-managed engine. This fixture is not the Amazon website and does not establish live Kindle compatibility.
 
-The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. It also revokes decoded image URLs and binds navigation to container mouse press/release rather than button clicks, matching the inspected Kindle boundaries.
+The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. It also revokes decoded image URLs, binds navigation to container mouse press/release, and refuses more navigation while a delayed loading indicator remains after the new image appears. This checks restoration against Kindle's readiness boundary as well as the gesture boundary.
