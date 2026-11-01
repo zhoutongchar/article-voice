@@ -43,7 +43,14 @@ export function createKindleSource({ document: doc = document, url = new URL(loc
       const button = doc.querySelector(direction > 0 ? '#kr-chevron-right' : '#kr-chevron-left');
       if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return null;
       const before = pageImage()?.currentSrc;
-      button.click();
+      // Kindle's chevron container navigates on a mouse press/release. Its
+      // click listener only records metrics; HTMLElement.click() cannot turn
+      // a page. Send one complete gesture through the normal DOM listeners.
+      const rect = button.parentElement.getBoundingClientRect();
+      const gesture = { bubbles: true, cancelable: true, view: doc.defaultView,
+        button: 0, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+      button.dispatchEvent(new doc.defaultView.MouseEvent('mousedown', { ...gesture, buttons: 1 }));
+      button.dispatchEvent(new doc.defaultView.MouseEvent('mouseup', { ...gesture, buttons: 0 }));
       const deadline = performance.now() + 8000;
       while (performance.now() < deadline) {
         // Finish locating a page already turned before observing cancellation.

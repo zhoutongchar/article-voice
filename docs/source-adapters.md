@@ -41,6 +41,8 @@ An adapter is asked to present the next unit only after the current audio comple
 
 Kindle unit identity combines the book ID and captured image digest. The optional location label is display metadata: Kindle can hide or update it independently of the image, so it must not participate in position verification.
 
+Kindle's chevron containers handle mouse press/release for navigation. The adapter sends one bubbling `mousedown`/`mouseup` gesture through those DOM handlers and verifies a completed image change. A synthetic `click()` alone only reaches metrics listeners in the inspected reader build and does not navigate. The gesture fixture preserves that distinction.
+
 The Kindle prefetch mechanism temporarily visits upcoming pages, so Amazon may record those pages as visited. Restoration returns the visible page; it does not promise to undo Kindle’s reading-history synchronization. Resizing or changing Kindle layout invalidates page geometry and requires reopening the reader.
 
 ## Adding another source
@@ -55,4 +57,4 @@ Run `npm run check`, the Python boundary suite, and `npm run mac:check`. Build t
 
 Run `npm run dev`, open `http://127.0.0.1:4317/tests/source.html`, and choose **Run adapter checks**. This uses the production Kindle adapter, actual Apple Vision OCR, and explicitly labelled recorded speech. It checks queued units, source restoration, word marks, 3×, page completion, pause, stop, and cleanup. Add `?local=1` to use real Qwen through the app-managed engine. This fixture is not the Amazon website and does not establish live Kindle compatibility.
 
-The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. This reproduces the optional-control boundary while also revoking decoded image URLs as Kindle does.
+The browser fixture starts with no location label, restores it after capture, and delays labels on alternating pages. It also revokes decoded image URLs and binds navigation to container mouse press/release rather than button clicks, matching the inspected Kindle boundaries.

@@ -43,8 +43,22 @@ async function render() {
   document.getElementById('kr-chevron-right').disabled = index === pages.length - 1;
   document.body.dataset.page = String(index);
 }
-document.getElementById('kr-chevron-left').onclick = () => { if (index > 0) { index--; render(); } };
-document.getElementById('kr-chevron-right').onclick = () => { if (index < pages.length - 1) { index++; render(); } };
+// Match Kindle's delivered gesture boundary: navigation belongs to the
+// surrounding container's press/release handler, not a button click handler.
+const bindPageTurn = (id, direction) => {
+  const button = document.getElementById(id), container = button.parentElement;
+  container.addEventListener('mousedown', event => {
+    if (button.disabled || event.button !== 0) return;
+    event.stopPropagation();
+    const release = event => {
+      container.removeEventListener('mouseup', release);
+      event.stopPropagation(); event.preventDefault();
+      if (index + direction >= 0 && index + direction < pages.length) { index += direction; render(); }
+    };
+    container.addEventListener('mouseup', release, { once: true });
+  });
+};
+bindPageTurn('kr-chevron-left', -1); bindPageTurn('kr-chevron-right', 1);
 await render();
 const recognize = async (image, signal) => {
   const response = await fetch('/test/ocr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image, language: 'en' }), signal });

@@ -1,6 +1,6 @@
 {
   "name": "article-voice",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "description": "Read web articles with Cartesia or local Qwen3-TTS voices, word highlighting and pitch-preserving 3× playback.",
