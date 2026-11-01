@@ -63,6 +63,9 @@ export async function parseAlignment(value, speech, audio) {
   require(Array.isArray(value.unmapped) && value.unmapped.every(item => span(item, speech.text.length))); return freeze(value);
 }
 export function sourceRanges(chunk, start, end) {
+  // Inserted formatting has no source extent. Never turn its empty range into
+  // a zero-length reference inside an otherwise overlapping source-map span.
+  if (end <= start) return [];
   const refs = [];
   for (const item of chunk.sourceMap) {
     if (start >= item.end || end <= item.start) continue;

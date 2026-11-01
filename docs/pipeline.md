@@ -54,7 +54,8 @@ A source reference contains `unitId`, `revision`, `block`, `start`, and `end`.
 The adapter retains the corresponding DOM positions or OCR boxes in Chrome.
 The source map covers prepared text in order. An identity mapping has one source
 range of equal length. A repaired span may map to multiple original fragments;
-inserted punctuation may have no source. A repaired word spanning pages retains
+inserted punctuation has no source extent and uses an empty `sources` list,
+never a zero-length source reference. A repaired word spanning pages retains
 both fragments. Unmapped words never receive guessed locations or timestamps.
 
 ## Source assembly and planning

@@ -110,6 +110,8 @@ def alignment(value, spoken, sound):
 
 
 def source_ranges(chunk, start, end):
+    # Inserted formatting has no source extent, even inside a mapped span.
+    if end <= start: return []
     refs = []
     for item in chunk['sourceMap']:
         if start >= item['end'] or end <= item['start']: continue

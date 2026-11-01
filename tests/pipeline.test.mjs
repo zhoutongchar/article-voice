@@ -2,7 +2,7 @@ import { digest } from '../src/hash.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { artifact, contentFromUnit, contentChunksFromUnit, parseContent, parseSpeech, parseAudio, parseAlignment, planSpeech, sourceRanges, validateContentTransform } from '../src/pipeline/contracts.js';
+import { artifact, contentFromUnit, contentChunksFromUnit, parseContent, parseSpeech, parseAudio, parseAlignment, planSpeech, sourceRanges, validateContentTransform, transformContent, projectPlayable } from '../src/pipeline/contracts.js';
 import { StageScheduler } from '../src/pipeline/scheduler.js';
 import { prepareReadingUnit } from '../src/reading-preparation.js';
 import { ReaderEngine } from '../src/engine.js';
@@ -32,6 +32,44 @@ test('JavaScript artifacts round-trip through Python validators with identical i
   await assert.rejects(parseAlignment(await artifact('alignment', { ...Object.fromEntries(Object.entries(alignment).filter(([k]) => !['id', 'kind', 'schemaVersion'].includes(k))), audioId: 'c'.repeat(64) }), speech, audio), /different text or audio/);
   const draft = await artifact('content', { ...Object.fromEntries(Object.entries(content).filter(([k]) => !['id', 'kind', 'schemaVersion'].includes(k))), stability: 'draft' });
   await assert.rejects(planSpeech(draft), /sealed/);
+});
+
+test('formatter insertions have no invented source span and survive Python, OCR preparation and playable projection', async () => {
+  for (const [original, text] of [
+    ['The cafe has warm windows .We can sit.', 'The cafe has warm windows. We can sit.'],
+    ['😀 A gate creaks\nwith the sound of metal.', '😀 A gate creaks,\nwith the sound of metal.']
+  ]) {
+    const unit = { id: 'page', blocks: [original], source: { format: 'ocr' }, passages: [] };
+    const input = await contentFromUnit(unit);
+    const result = JSON.parse(execFileSync('.venv/bin/python', ['-c', `
+import json,sys
+sys.path.insert(0,'local')
+from text_cleanup import source_spans, rejection_reason
+from contracts import transform, source_ranges
+chunk,text=json.load(sys.stdin)
+assert rejection_reason(chunk['text'],text) is None
+record={'original':chunk['text'],'text':text,'spans':source_spans(chunk['text'],text)}
+output=transform(chunk,record)
+assert source_ranges(chunk,3,3)==[]
+json.dump({'record':record,'output':output},sys.stdout,ensure_ascii=False)
+`], { input: JSON.stringify([input, text]), encoding: 'utf8' }));
+    assert.deepEqual(sourceRanges(input, 3, 3), []);
+    const output = await transformContent(input, result.record);
+    assert.deepEqual(output, result.output);
+    assert.ok(output.sourceMap.some(item => !item.identity && item.sources.length === 0));
+    await validateContentTransform(input, output);
+    const prepared = await prepareReadingUnit(unit, { provider: 'local' }, undefined, chunk => transformContent(chunk, result.record));
+    assert.equal(prepared.passages.length, 1);
+    const passage = prepared.passages[0], start = passage.text.indexOf('with') >= 0 ? passage.text.indexOf('with') : passage.text.indexOf('We');
+    const length = passage.text.startsWith('with', start) ? 4 : 2;
+    const pcm = new Uint8Array(48000), speech = passage.speechChunk;
+    const audio = await artifact('audio', { textDigest: speech.textDigest, format: 'pcm_s16le', sampleRate: 24000, channels: 1, frames: 24000,
+      pcmDigest: await digest(pcm), voiceId: 'Ryan', referenceId: 'a'.repeat(64), modelRevision: 'test', generationId: 'b'.repeat(64) });
+    const alignment = await artifact('alignment', { audioId: audio.id, textDigest: speech.textDigest, sampleRate: 24000, frames: 24000,
+      words: [{ text: passage.text.slice(start, start + length), startSample: 100, endSample: 200, range: { start, end: start + length } }], unmapped: [], alignerRevision: 'test' });
+    const playable = await projectPlayable(passage.sourceContent, speech, audio, alignment);
+    assert.deepEqual(playable.words[0].sources, [{ unitId: 'page', revision: 'page', block: 0, start: original.indexOf(playable.words[0].text), end: original.indexOf(playable.words[0].text) + length }]);
+  }
 });
 
 test('a long HTML article prepares only the selected paragraph and the formatter can be removed', async () => {

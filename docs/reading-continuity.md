@@ -71,6 +71,23 @@ slow presentation, ready next-page audio and Pause/Stop. The extension build
 also passed. No installed-extension or live Kindle playback was performed for
 these source changes.
 
+## Formatter insertion failure fixed in 0.8.3
+
+A separate production request reproduced `Invalid pipeline artifact` when the
+formatter changed `The cafe has warm windows .We can sit.` to
+`The cafe has warm windows. We can sit.` An insertion has an empty input range;
+source projection incorrectly returned a zero-length source reference for that
+range. Both mapping owners now return no source references for empty ranges,
+while retaining the existing strict validation of actual source references.
+
+After installing 0.8.3 and restarting its owned voice engine, the same HTTP
+request returned 200 instead of 400. The real native-host path completed
+formatting, speech, alignment and source projection, preserving the source
+position of `We`. The output passed the loaded 0.8.2 contract parser, and the
+regression covers UTF-16 offsets, OCR soft-wrap composition and parity between
+JavaScript and Python. All 82 JavaScript tests and 49 Python tests passed. A live
+Kindle playback check was not completed for this fix.
+
 ## Replay without Chrome
 
 Start the existing local engine, then use the built-in synthetic OCR layout:

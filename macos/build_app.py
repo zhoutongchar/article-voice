@@ -101,7 +101,7 @@ info = {
     'CFBundleExecutable': 'ArticleVoice',
     'CFBundlePackageType': 'APPL',
     'CFBundleShortVersionString': version,
-    'CFBundleVersion': '20',
+    'CFBundleVersion': '21',
     'CFBundleIconFile': 'AppIcon',
     'NSPrincipalClass': 'NSApplication',
     'NSHighResolutionCapable': True,

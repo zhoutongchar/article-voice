@@ -106,6 +106,14 @@ token throughput or guarantee gapless 3× playback.
 
 ## Verification
 
+The 0.8.3 developer build fixes formatter insertions producing invalid empty
+source references. It passes **82 JavaScript tests and 49 Python tests**. A
+real-model formatting request reproduced HTTP 400 before the fix and returned
+HTTP 200 afterward; the installed native host completed formatting, speech,
+alignment and source projection. The result also passes the 0.8.2 extension
+validator, so this backend fix does not require an extension reload. Live Kindle
+playback has not been reverified for 0.8.3.
+
 The 0.8.2 developer build includes fixes for OCR column/paragraph boundaries,
 soft-wrap pauses and navigation blocking ready audio. All 81 JavaScript tests
 pass; the packaged app and bundled extension were installed locally and their
