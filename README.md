@@ -96,6 +96,10 @@ npm run mac:check
 
 The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a gitignored `.env`; see `.env.example`. Never commit credentials or generated model caches.
 
+For headless performance measurements from assembled synthetic content, see the
+[pipeline latency investigation](docs/latency.md). It compares chunk concurrency,
+speech batching and optional backend alignment prefetch without changing Chrome.
+
 ## Verification
 
 The 0.8.0 contract refactor passes **76 JavaScript tests, 44 Python tests and 48 native checks**. Draft 2020-12 schemas and examples validate, and the published TypeScript declarations pass strict checking. Real-model Chrome fixtures exercised formatter-disabled playback with no formatter weights present, whole-window OCR formatting with a cross-page word, source highlighting, sentence-boundary playback and seeking. An ordinary HTTP page also passed the three-layout, whole-article and ten-second scroll checks. The installed 0.8.0 Chrome sample also passed playback, original-source highlighting, paragraph progression, formatter bypass and 3×. Live Kindle OCR, highlighting and lookahead worked; the Mac locked before its automatic page turn could be verified. See [pipeline verification](docs/pipeline.md#verification-scope) for the distinction between browser fixtures, native transport and installed-extension coverage.

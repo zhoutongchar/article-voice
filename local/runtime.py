@@ -100,6 +100,7 @@ class SpeechRuntime:
             if cancelled and cancelled.is_set(): raise InterruptedError('Reading cancelled')
             with self.model_lock: return operation()
         if self.executor is None: return run()
+        if threading.current_thread() is self.executor.thread: return run()
         future = self.executor.submit(run, priority=priority)
         while True:
             from concurrent.futures import TimeoutError
@@ -140,7 +141,7 @@ class SpeechRuntime:
                 'inputIds': [chunk['id']], 'output': result, 'elapsed': time.perf_counter() - started,
                 'cached': record['cached'], 'reason': record.get('reason'), 'formatterId': record['identity']}
 
-    def synthesize(self, chunk, voice, language, cancelled=None, priority=0):
+    def synthesize(self, chunk, voice, language, cancelled=None, priority=0, prefetch_alignment=False):
         speech(chunk)
         reference = self.references.voices[voice]
         key = identity({'textDigest': chunk['textDigest'], 'referenceId': reference.identity, 'modelRevision': CONFIG['revision'],
@@ -155,6 +156,10 @@ class SpeechRuntime:
                              frames=len(pcm) // 2, pcmDigest=digest(pcm), voiceId=voice, referenceId=reference.identity,
                              modelRevision=CONFIG['revision'], generationId=identity({'generation': CONFIG['generation'], 'language': language}))
             self.store.put_audio(key, value, pcm)
+            if prefetch_alignment:
+                try: self.align(chunk, value, language, cancelled, priority)
+                except InterruptedError: raise
+                except Exception: pass  # Optional cache warming preserves valid audio; the align request owns inference failures.
             return (value, pcm), False
         cached = self.store.speech(key)
         (value, pcm), hit = (cached, True) if cached else self.gpu(run, cancelled, priority)

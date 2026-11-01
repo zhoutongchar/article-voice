@@ -87,7 +87,7 @@ test('queued continuation is spoken once, changes the visible page at its measur
   } };
   session = new ReadingSession({ engine, transport, createAudio: () => new AudioFixture() });
   session.load(a, settings); await session.play(); await session.pending;
-  assert.equal(inputs[0], 'We saw a re-\nmarkable place. Another sentence belongs here.');
+  assert.equal(inputs.filter(text => text === 'We saw a re-\nmarkable place. Another sentence belongs here.').length, 1);
   assert.equal(spoken.filter(text => text.includes('markable')).length, 1);
   const word = engine.segments[0].result.words.find(word => word.word === 'remarkable');
   engine.audio.currentTime = word.start; engine.tick(); await until(() => visible.id === 'b' && !session.presenting);

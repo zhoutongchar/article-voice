@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
@@ -86,6 +87,68 @@ class PipelineTests(unittest.TestCase):
             with self.assertRaises(PipelineError) as raised: runtime.align(request, sound)
             self.assertEqual(raised.exception.code, 'ARTIFACT_EXPIRED'); self.assertTrue(raised.exception.retryable)
 
+    def test_reader_alignment_prefetch_reuses_independent_artifacts_without_waiting_on_its_gpu_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []; runtime = self.runtime(directory, calls, enabled=False); executor = StageExecutor()
+            runtime.executor = executor
+            try:
+                request = spoken(); sound = runtime.synthesize(request, 'Ryan', 'en', prefetch_alignment=True)
+                self.assertFalse(sound['cached']); self.assertEqual(calls, ['speech', 'align'])
+                timed = runtime.align(request, sound['output'], 'en')
+                self.assertTrue(timed['cached']); alignment(timed['output'], request, sound['output'])
+                self.assertTrue(runtime.synthesize(request, 'Ryan', 'en', prefetch_alignment=True)['cached'])
+                self.assertEqual(calls, ['speech', 'align'])
+                for failure in (ValueError, RuntimeError):
+                    def failed(*args, **options): raise failure('invalid measured timestamps')
+                    runtime.aligner.generate = failed
+                    other = spoken(f'A different complete paragraph for {failure.__name__}.')
+                    valid_audio = runtime.synthesize(other, 'Ryan', 'en', prefetch_alignment=True)
+                    self.assertEqual(valid_audio['output']['textDigest'], other['textDigest'])
+                    with self.assertRaisesRegex(failure, 'invalid measured timestamps'): runtime.align(other, valid_audio['output'], 'en')
+            finally: executor.shutdown(cancel_futures=True)
+
+    def test_prefetched_alignment_is_available_while_the_next_speech_job_owns_the_gpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls = []; runtime = self.runtime(directory, calls, enabled=False); executor = StageExecutor()
+            runtime.executor = executor
+            entered = threading.Event(); release = threading.Event(); second = threading.Event(); finish = threading.Event()
+            generate = runtime.tts.generate
+            def gated(**options):
+                if options['text'].startswith('First'):
+                    entered.set(); release.wait(3)
+                else: second.set(); finish.wait(3)
+                yield from generate(**options)
+            runtime.tts.generate = gated
+            pool = ThreadPoolExecutor(2)
+            first_text, second_text = spoken('First paragraph.'), spoken('Second paragraph.')
+            try:
+                first_job = pool.submit(runtime.synthesize, first_text, 'Ryan', 'en', prefetch_alignment=True)
+                self.assertTrue(entered.wait(1))
+                next_job = pool.submit(runtime.synthesize, second_text, 'Ryan', 'en', prefetch_alignment=True)
+                deadline = time.monotonic() + 1
+                while executor.waiting.qsize() != 1 and time.monotonic() < deadline: time.sleep(.001)
+                self.assertEqual(executor.waiting.qsize(), 1)
+                release.set(); self.assertTrue(second.wait(2))
+                sound = first_job.result(1)
+                self.assertTrue(runtime.align(first_text, sound['output'], 'en')['cached'])
+                self.assertFalse(next_job.done())
+                finish.set(); next_job.result(2)
+            finally: release.set(); finish.set(); pool.shutdown(wait=True); executor.shutdown(cancel_futures=True)
+
+    def test_cancel_during_alignment_prefetch_preserves_audio_without_publishing_a_late_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self.runtime(directory, [], enabled=False); executor = StageExecutor(); runtime.executor = executor
+            cancelled = threading.Event(); put_audio = runtime.store.put_audio
+            def saved(*args): put_audio(*args); cancelled.set()
+            runtime.store.put_audio = saved
+            try:
+                request = spoken()
+                with self.assertRaises(InterruptedError): runtime.synthesize(request, 'Ryan', 'en', cancelled, prefetch_alignment=True)
+                cached = runtime.synthesize(request, 'Ryan', 'en')
+                self.assertTrue(cached['cached'])
+                self.assertFalse(runtime.align(request, cached['output'], 'en')['cached'])
+            finally: executor.shutdown(cancel_futures=True)
+
     def test_real_http_stages_support_identity_formatting_and_reject_mismatched_artifacts(self):
         import server
         with tempfile.TemporaryDirectory() as directory:
@@ -97,7 +160,7 @@ class PipelineTests(unittest.TestCase):
                 connection.request('POST', '/pipeline/' + path, json.dumps(body), {'Content-Type': 'application/json'})
                 response = connection.getresponse(); result = response.status, json.loads(response.read()); connection.close(); return result
             try:
-                with patch.object(server, 'runtime', runtime):
+                with patch.object(server, 'runtime', runtime), patch.object(server, 'PREFETCH_ALIGNMENT', True):
                     status, result = post('format', {'content': original(), 'enabled': False})
                     self.assertEqual(status, 200); self.assertEqual(result['status'], 'bypassed')
                     request = spoken(); reference = runtime.reference_identity('Ryan')
@@ -105,6 +168,7 @@ class PipelineTests(unittest.TestCase):
                     self.assertEqual(status, 200)
                     status, timed = post('align', {'speech': request, 'audio': sound['output']})
                     self.assertEqual(status, 200); self.assertEqual(timed['output']['audioId'], sound['output']['id'])
+                    self.assertTrue(timed['cached'])
                     status, failure = post('align', {'speech': spoken('Different text.'), 'audio': sound['output']})
                     self.assertEqual(status, 400); self.assertEqual(failure['code'], 'INPUT_MISMATCH')
                     invalid = dict(request, text='tampered')

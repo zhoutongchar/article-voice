@@ -128,6 +128,11 @@ A single priority executor owns native GPU work; queued cancellation is handled
 before execution. A running inference observes cancellation at its supported
 boundaries. Concurrent GPU inference has not been enabled or claimed faster.
 
+Headless [latency experiments](latency.md) compare chunk concurrency, batching and
+alignment scheduling with synthetic assembled content and real models. Optional
+backend alignment prefetch warms the independent alignment cache before the next
+speech job. It uses the existing contracts and requires no extension reload.
+
 CPU validation, cache access, OCR, source capture/navigation and audio playback
 can overlap model work. Physical page navigation keeps its existing serialized
 ownership and restore/cancellation rules.
