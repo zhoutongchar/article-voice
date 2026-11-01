@@ -96,6 +96,11 @@ The optional Cartesia live-development check reads `CARTESIA_API_KEY` from a git
 
 ## Verification
 
+An isolated [HTML speech preparation experiment](docs/text-cleanup-experiment.md)
+uses a small local LLM before Qwen synthesis and alignment, with source mappings
+for highlighting and word seeking. It is opt-in and does not change the installed
+reader's behavior.
+
 For the 0.5.1 preview, prior local verification passed JavaScript checks and browser harness checks for the three layouts, playback continuity, whole-article mode, and the ten-second scroll suspension. The minimal player measured **480 × 52 CSS pixels**. Real Qwen checks exercised speech, measured alignment, nine voices, word seeking, cached replay, and playback around 3× on the test Mac. The user also confirmed that the installed extension's sample reading works.
 
 For the 0.6.5 source, the installed extension was tested on Kindle Cloud Reader with local Qwen speech and Apple Vision OCR. Playback completed four consecutive automatic page turns at 2.25×, with source word highlighting and two-page audio preparation/refill. Manual page turns while stopped, paused, or playing and a fullscreen layout change reconnected to the visible page without the former fatal error. Word seeking, resume after reconnection, and Stop clearing playback and marks while leaving Kindle controls available were checked. A page/layout change starts reading from the beginning of the newly visible page; it does not locate the old spoken word across reflow.

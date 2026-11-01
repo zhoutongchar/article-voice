@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 process.chdir(fileURLToPath(new URL('..', import.meta.url)));
 await mkdir('.cache', { recursive: true });
-await build({ entryPoints: ['tests/demo.js', 'tests/demo-player.js', 'tests/source-demo.js'], bundle: true, format: 'esm', outdir: '.cache', target: 'chrome120' });
+await build({ entryPoints: ['tests/demo.js', 'tests/demo-player.js', 'tests/source-demo.js', 'tests/cleanup-demo.js'], bundle: true, format: 'esm', outdir: '.cache', target: 'chrome120' });
 async function getKey() {
   if (process.env.CARTESIA_API_KEY) return process.env.CARTESIA_API_KEY;
   try { return (await readFile('.env', 'utf8')).match(/^CARTESIA_API_KEY\s*=\s*["']?([^\r\n"']+)/m)?.[1]?.trim() || ''; }

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Article Voice · HTML speech preparation</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#243e32;background:#faf9f5}body{max-width:880px;margin:56px auto;padding:0 24px}h1{font-size:32px;letter-spacing:-.8px}p{line-height:1.6}.muted{color:#667b70;font-size:14px}.card{background:#fff;border:1px solid #dce5de;border-radius:18px;padding:26px;margin:24px 0}.source{font:25px/1.75 Georgia,serif;cursor:pointer}.math{white-space:nowrap}.math sub{font-size:.7em}.text{white-space:pre-wrap;font-size:15px;line-height:1.6}button,select{font:inherit;padding:10px 16px;background:#e7efe9;border:0;border-radius:10px;color:#244b38;cursor:pointer}button.primary{background:#1a6c4e;color:white}button:disabled{opacity:.5;cursor:default}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:24px}label{display:flex;gap:7px;align-items:center}#status{min-height:1.4em}#checks{white-space:pre-wrap;font:14px/1.6 ui-monospace,monospace}::highlight(cleanup-word){background:#f9d767;color:#182b21}::highlight(cleanup-passage){background:#e5f1e8;color:#243e32}audio{display:none}a{color:#1a6c4e}
+</style></head><body>
+<p class="muted">ARTICLE VOICE · LOCAL EXPERIMENT · HTML, NO OCR</p>
+<h1>Keep the words. Make the notation speak.</h1>
+<p>These samples came from HTML extraction. A small local model formats marked math expressions; surrounding prose stays unchanged. Qwen generates the voice, then the forced aligner measures its word timings. Spoken math maps back to the original expression.</p>
+<label>Example <select id="example" aria-label="Example"></select></label>
+<section class="card"><p class="muted">ORIGINAL PAGE · click a word or expression to listen from there</p><div id="source" class="source"></div><div class="controls"><button id="original">Play original extraction</button><button id="prepared" class="primary">Play prepared version</button><button id="pause">Pause</button><button id="stop">Stop</button><label>Speed <select id="speed" aria-label="Speed"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option></select></label><label><input type="checkbox" id="follow" checked>Follow words</label></div><p id="status" role="status">Loading the local trial…</p></section>
+<section class="card"><p class="muted">TEXT SENT TO THE VOICE MODEL</p><p id="before" class="text"></p><p id="after" class="text"></p><p id="details" class="muted"></p></section>
+<button id="run-checks">Run browser checks</button><pre id="checks"></pre><audio id="audio"></audio>
+<script type="module" src="/.cache/cleanup-demo.js"></script></body></html>

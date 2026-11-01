@@ -1,0 +1,5 @@
+[
+  {"text":"The reader keeps state st while the page changes.","math":[{"start":23,"end":25,"tex":"s_t"}]},
+  {"text":"at is the next action in the reading session.","math":[{"start":0,"end":2,"tex":"a_t"}]},
+  {"text":"The response ot+1 arrives after the action.","math":[{"start":13,"end":17,"tex":"o_{t+1}"}]}
+]
