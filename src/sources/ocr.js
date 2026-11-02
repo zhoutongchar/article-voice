@@ -3,6 +3,47 @@ import { hasTerminalPunctuation } from '../text-segmentation.js';
 const validBox = box => box && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(box[key]))
   && box.x >= 0 && box.y >= 0 && box.width > 0 && box.height > 0 && box.x + box.width <= 1.001 && box.y + box.height <= 1.001;
 
+function columnsFor(lines, aspect) {
+  const heights = lines.map(line => line.box.height).sort((a, b) => a - b);
+  const minimumGutter = heights[Math.floor(heights.length / 2)] * aspect * .75;
+  // Highlighting can split one line into several observations. A gutter is
+  // empty across the text boxes, rather than a gap between their left edges.
+  const occupied = [...lines].sort((a, b) => a.box.x - b.box.x), gaps = [];
+  let right = occupied[0].box.x + occupied[0].box.width;
+  for (const line of occupied.slice(1)) {
+    if (line.box.x - right >= minimumGutter) gaps.push({ width: line.box.x - right, split: (line.box.x + right) / 2 });
+    right = Math.max(right, line.box.x + line.box.width);
+  }
+  for (const gap of gaps.sort((a, b) => b.width - a.width)) {
+    const left = lines.filter(line => line.box.x < gap.split), right = lines.filter(line => line.box.x >= gap.split);
+    if (left.length >= 2 && right.length >= 2) return [left, right];
+  }
+  return [lines];
+}
+
+function rowsFor(column) {
+  const rows = [];
+  for (const line of [...column].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)) {
+    const row = rows.at(-1), first = row?.[0];
+    const sameRow = first && Math.abs(line.box.y + line.box.height / 2 - first.box.y - first.box.height / 2)
+      <= Math.min(line.box.height, first.box.height) / 2;
+    if (sameRow) row.push(line); else rows.push([line]);
+  }
+  return rows.map(parts => {
+    parts.sort((a, b) => a.box.x - b.box.x);
+    let text = ''; const words = [];
+    const x = Math.min(...parts.map(line => line.box.x)), y = Math.min(...parts.map(line => line.box.y));
+    for (const part of parts) {
+      const offset = text.length + (text ? 1 : 0);
+      text += (text ? ' ' : '') + part.text;
+      words.push(...part.words.map(word => ({ ...word, start: word.start + offset, end: word.end + offset })));
+    }
+    return { text, words, box: { x, y,
+      width: Math.max(...parts.map(line => line.box.x + line.box.width)) - x,
+      height: Math.max(...parts.map(line => line.box.y + line.box.height)) - y } };
+  });
+}
+
 // Vision is the boundary owner for UTF-16 word offsets and normalized, top-left
 // image coordinates. Parse it once; all hit testing and marks use these facts.
 export function ocrBlocks(value) {
@@ -22,16 +63,9 @@ export function ocrBlocks(value) {
     });
     return { text: line.text, box: { ...line.box }, words };
   });
-  const xs = [...new Set(lines.map(line => line.box.x))].sort((a, b) => a - b);
-  let split, gap = 0;
-  for (let i = 1; i < xs.length; i++) if (xs[i] - xs[i - 1] > gap) { gap = xs[i] - xs[i - 1]; split = (xs[i] + xs[i - 1]) / 2; }
-  const left = lines.filter(line => line.box.x < split), right = lines.filter(line => line.box.x >= split);
-  const columns = gap > .18 && left.length >= 2 && right.length >= 2
-    && Math.max(...left.map(line => line.box.x + line.box.width)) <= Math.min(...right.map(line => line.box.x)) + .025
-    ? [left, right] : [lines];
   const blocks = [];
-  for (const column of columns) {
-    column.sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x);
+  for (const observations of columnsFor(lines, value.height / value.width)) {
+    const column = rowsFor(observations);
     const heights = column.map(line => line.box.height).sort((a, b) => a - b), height = heights[Math.floor(heights.length / 2)];
     const edge = Math.min(...column.map(line => line.box.x));
     // x and y are normalized against different image dimensions. Compare

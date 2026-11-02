@@ -87,6 +87,36 @@ test('OCR preserves paragraph indents on a wide spread and joins a sentence acro
   assert.ok(!ocrBlocks(response).some(b => b.text.includes('creaks\nA new indented')));
 });
 
+test('highlight fragments cannot replace the gutter or reverse words on the same line', () => {
+  const fragment = (text, x, y, width) => ({ text, box: box(x, y, width), words: [{ start: 0, end: text.length, box: box(x, y, width) }] });
+  const response = { width: 2000, height: 1000, lines: [
+    fragment('Left opening ends.', .05, .05, .43),
+    fragment('and full of relief.', .32, .099, .16),
+    fragment('Her smile is genuine', .06, .10, .25),
+    fragment('Left page ends.', .05, .15, .43),
+    fragment('Right opening ends.', .53, .05, .43),
+    fragment('Right page ends.', .53, .10, .43)
+  ] };
+  const blocks = ocrBlocks(response), text = blocks.map(block => block.text).join('\n\n');
+  assert.ok(text.includes('Her smile is genuine and full of relief.'));
+  assert.ok(text.indexOf('Left page ends.') < text.indexOf('Right opening ends.'));
+  assert.equal(blocks.flatMap(block => block.words).length, response.lines.length);
+  const block = blocks.findIndex(block => block.text.includes('and full'));
+  const start = blocks[block].text.indexOf('and full');
+  const rect = { left: 0, top: 0, width: 2000, height: 1000 };
+  assert.deepEqual(imageWordAtPoint({ blocks }, rect, 650, 110), { block, start, end: start + 'and full of relief.'.length });
+  assert.equal(imageSpan({ blocks }, rect, block, start, start + 3).rects[0].left, 640);
+  assert.equal(response.lines[1].words[0].start, 0, 'source observations remain immutable');
+});
+
+test('single-column highlight fragments join on a row while visual wraps remain separate', () => {
+  const first = line('😀 A familiar', .05, .05), second = line('voice reads', .26, .049), next = line('the following line.', .05, .10);
+  const blocks = ocrBlocks(recognized([second, next, first]));
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].text, '😀 A familiar voice reads\nthe following line.');
+  assert.equal(blocks[0].words[1].start, first.text.length + 1);
+});
+
 test('opening follows a page that changes during OCR instead of publishing stale word coordinates', async () => {
   const fixture = pages(async image => {
     if (image === '0') await fixture.access.turn(1);

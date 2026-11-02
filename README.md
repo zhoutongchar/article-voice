@@ -106,6 +106,14 @@ token throughput or guarantee gapless 3× playback.
 
 ## Verification
 
+The 0.8.4 developer build fixes highlighted OCR fragments breaking two-column
+reading order. Native Vision recognition of the supplied November 2 screenshot
+reproduced the failure. The fixed parser reads the entire left page before the
+right, preserves all 634 recognized words and their boxes, and passes the
+original-word hit check and speech preparation. All **84 JavaScript tests** pass.
+This extension change requires Reload and a refreshed book tab; installed Kindle
+playback has not yet been reverified for 0.8.4.
+
 The 0.8.3 developer build fixes formatter insertions producing invalid empty
 source references. It passes **82 JavaScript tests and 49 Python tests**. A
 real-model formatting request reproduced HTTP 400 before the fix and returned

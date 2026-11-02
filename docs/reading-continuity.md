@@ -88,6 +88,26 @@ regression covers UTF-16 offsets, OCR soft-wrap composition and parity between
 JavaScript and Python. All 82 JavaScript tests and 49 Python tests passed. A live
 Kindle playback check was not completed for this fix.
 
+## Highlight fragments and column order fixed in 0.8.4
+
+Native Vision recognition of the November 2 screenshot produced 51 observations,
+including two fragments on one highlighted line. The original detector chose
+the largest gap between observation starting positions, which was inside the
+left page. Its overlap check then rejected columns and sorted both pages by y.
+Small vertical differences also reversed fragments on the same visual line.
+
+The detector now finds an empty gutter between the occupied text intervals,
+scaled to glyph height in image coordinates. Within each column, fragments with
+matching vertical centers join left to right before paragraph detection. Word
+boxes stay unchanged; offsets are rebased into the assembled source text.
+
+The screenshot replay preserves all 634 recognized words and their boxes,
+switches from left to right only once, and passes word hit testing and speech
+preparation. The earlier column-continuation screenshot still produces ten
+paragraphs. The 84-test JavaScript suite covers the highlighted spread, baseline
+jitter, UTF-16 offsets and a single-column case. These are native OCR and local
+pipeline checks; installed Kindle playback has not been reverified for 0.8.4.
+
 ## Replay without Chrome
 
 Start the existing local engine, then use the built-in synthetic OCR layout:
