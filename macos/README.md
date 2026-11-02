@@ -14,7 +14,7 @@ After setup, the Mac setup window can be closed or the app quit. Chrome starts t
 
 ### GitHub preview and store distribution
 
-The [GitHub preview release](https://github.com/zhoutongchar/article-voice/releases/tag/v0.8.1) distributes the app ZIP and extension ZIP, including optional full-passage formatting, Kindle OCR and default alignment prefetch. It is ad-hoc signed and unnotarized. A published Chrome Web Store listing and a Developer ID signing identity are not available. Connect it once by loading its `Contents/Resources/ChromeExtension` directory with Chrome's **Load unpacked** action. The built app includes this directory. Chrome Developer mode must remain enabled. See the root README for the complete installation steps and macOS opening guidance.
+The [GitHub preview release](https://github.com/zhoutongchar/article-voice/releases/tag/v0.8.4) distributes the app ZIP and extension ZIP, including optional full-passage formatting, Kindle OCR and default alignment prefetch. It is ad-hoc signed and unnotarized. A published Chrome Web Store listing and a Developer ID signing identity are not available. Connect it once by loading its `Contents/Resources/ChromeExtension` directory with Chrome's **Load unpacked** action. The built app includes this directory. Chrome Developer mode must remain enabled. See the root README for the complete installation steps and macOS opening guidance.
 
 For a future store release, upload `macos/build/Article Voice Chrome.zip` to the Chrome Web Store. Use the listing's extension ID and public key in `chrome/connection.json`, and set its HTTPS `storeUrl`. The ID must match that public key. The app's Connect Chrome button then opens the real listing. Chrome still requires the user to approve installation.
 

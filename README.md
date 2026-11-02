@@ -2,9 +2,9 @@
 
 Listen to Chrome articles with natural voices running on your Mac. Follow the spoken word on the original page, click any word to seek, and listen at **0.5×–3×** with pitch preserved.
 
-**[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.8.1)** · [Mac app architecture and build](macos/README.md)
+**[Download the Mac preview](https://github.com/zhoutongchar/article-voice/releases/tag/v0.8.4)** · [Mac app architecture and build](macos/README.md)
 
-The 0.8.1 preview includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. Versioned [pipeline contracts](docs/pipeline.md) support optional text formatting, independent speech/alignment caches and bounded stage scheduling. Alignment prefetch is enabled by default so word timings are ready before another paragraph takes the GPU. Current builds install 3.61 GB of core model files and download a further 0.99 GB on first enabled formatter use. YouTube transcript support is a future adapter.
+The 0.8.4 preview includes extensible [reading source adapters](docs/source-adapters.md), a shared queue, and a Kindle adapter with local Apple Vision OCR and automatic page turns. It fixes highlighted text disrupting column order, paragraph breaks at layout boundaries, and formatting insertions stopping playback. Versioned [pipeline contracts](docs/pipeline.md) support optional text formatting, independent speech/alignment caches and bounded stage scheduling. Alignment prefetch is enabled by default so word timings are ready before another paragraph takes the GPU. Current builds install 3.61 GB of core model files and download a further 0.99 GB on first enabled formatter use. YouTube transcript support is a future adapter.
 
 ![Article Voice's thin audio player](docs/images/minimal-player.png)
 
@@ -106,11 +106,13 @@ token throughput or guarantee gapless 3× playback.
 
 ## Verification
 
-The 0.8.4 developer build fixes highlighted OCR fragments breaking two-column
+The 0.8.4 release fixes highlighted OCR fragments breaking two-column
 reading order. Native Vision recognition of the supplied November 2 screenshot
 reproduced the failure. The fixed parser reads the entire left page before the
 right, preserves all 634 recognized words and their boxes, and passes the
-original-word hit check and speech preparation. All **84 JavaScript tests** pass.
+original-word hit check and speech preparation. Release checks passed **84
+JavaScript tests, 49 Python tests and 48 native checks**, plus bundle signature,
+archive integrity and packaged-version checks. Chrome reported 0.8.4 after Reload.
 This extension change requires Reload and a refreshed book tab; installed Kindle
 playback has not yet been reverified for 0.8.4.
 
@@ -126,8 +128,8 @@ The 0.8.2 developer build includes fixes for OCR column/paragraph boundaries,
 soft-wrap pauses and navigation blocking ready audio. All 81 JavaScript tests
 pass; the packaged app and bundled extension were installed locally and their
 versions, bundle signature and extension bytes verified. Chrome activation and
-live Kindle playback remain unverified for this build. The GitHub download
-above is still 0.8.1. See [the reading-continuity investigation](docs/reading-continuity.md)
+live Kindle playback remain unverified for this build. These fixes are included
+in the 0.8.4 download. See [the reading-continuity investigation](docs/reading-continuity.md)
 for the local replay, audio measurements and remaining streaming limits.
 
 The 0.8.1 release passed **76 JavaScript tests, 49 Python tests and 48 native
