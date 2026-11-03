@@ -106,6 +106,15 @@ token throughput or guarantee gapless 3× playback.
 
 ## Verification
 
+The locally installed 0.8.5 developer build normalizes native OCR edge overshoot
+within one source pixel before sending coordinates to Chrome. Four edge crops
+of the reported screenshot reproduced coordinate rejection; all six image
+replays now pass, preserving recognized text and word offsets. The installed
+native host also passes the existing extension parser. Checks passed **84
+JavaScript tests and 59 native checks**. This native-only fix needs no extension
+reload. Live playback of the exact failing book image has not been reverified;
+the published download above remains 0.8.4.
+
 The 0.8.4 release fixes highlighted OCR fragments breaking two-column
 reading order. Native Vision recognition of the supplied November 2 screenshot
 reproduced the failure. The fixed parser reads the entire left page before the

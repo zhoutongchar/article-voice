@@ -13,7 +13,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "ArticleVoiceHost"),
-        .executableTarget(name: "ArticleVoiceOCR"),
+        .executableTarget(name: "ArticleVoiceOCR", dependencies: ["ArticleVoiceCore"]),
         .target(name: "ArticleVoiceCore"),
         .executableTarget(name: "ArticleVoice", dependencies: ["ArticleVoiceCore"],
             exclude: ["FocusCapture.swift", "GlobalShortcut.swift", "ReadAlongView.swift", "ReaderModel.swift", "ReaderView.swift", "SelectionCopy.swift"]),

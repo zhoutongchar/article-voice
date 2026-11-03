@@ -108,6 +108,31 @@ paragraphs. The 84-test JavaScript suite covers the highlighted spread, baseline
 jitter, UTF-16 offsets and a single-column case. These are native OCR and local
 pipeline checks; installed Kindle playback has not been reverified for 0.8.4.
 
+## Native coordinate boundary fixed in 0.8.5
+
+The full November 2 evening screenshot replay had valid rectangles. Cropping
+its text to the image edges reproduced the reported coordinate rejection in
+four native Vision runs. Some line and word boxes extended a fraction of a
+pixel outside the image: one top coordinate was -3.62e-10; a word's left edge
+extended approximately 0.081 source pixels outside. Strict Chrome validation
+then rejected the entire page.
+
+`NormalizedImageBox` now owns conversion from bottom-left image coordinates to
+the top-left wire contract. It clips overshoot of at most one input pixel at
+each edge. Non-finite values, non-positive sizes, wholly invisible rectangles
+and larger excursions still fail. Both line and word boxes use this owner;
+the temporary coordinate-only diagnostic was removed.
+
+Six native image replays preserve recognized text and UTF-16 word offsets and
+pass the existing Chrome parser, speech preparation and word hit testing. The
+installed native-host OCR path also passed on the crop that originally had
+seven rejected rectangles, preserving all 1,078 recognized words. Checks passed
+84 JavaScript tests and 59 native checks, including edge normalization and
+malformed geometry. This fixes a reproducible boundary failure; the exact live
+Kindle image from the original error was not captured, and its playback has
+not been reverified. No extension reload or voice-engine restart is needed;
+closing and reopening the reader clears an existing failed session.
+
 ## Replay without Chrome
 
 Start the existing local engine, then use the built-in synthetic OCR layout:

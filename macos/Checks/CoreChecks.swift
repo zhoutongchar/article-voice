@@ -76,6 +76,19 @@ import AppKit
         try require(ReadingPlan(" \n\n").passages.isEmpty, "Empty reading had passages")
         try require(ReadingPlan(String(repeating: "界", count: 1200)).passages.map { $0.text.count } == [450,450,300], "Unbroken text was not bounded")
 
+        let rasterEdge = NormalizedImageBox(bottomLeft: CGRect(x: 0.1, y: 0.98, width: 0.4, height: 0.020000000362), imageWidth: 2055, imageHeight: 1100)
+        try require(rasterEdge?.y == 0, "Vision roundoff at the top edge rejected a whole page")
+        let edgeWord = NormalizedImageBox(bottomLeft: CGRect(x: -0.000039568553803391266, y: 0.8, width: 0.0046135833786283675, height: 0.02), imageWidth: 2055, imageHeight: 1100)
+        try require(edgeWord?.x == 0 && (edgeWord?.width ?? 0) > 0, "Subpixel word overshoot lost its visible rectangle")
+        let bottomRight = NormalizedImageBox(bottomLeft: CGRect(x: 0.9, y: -0.0001, width: 0.1001, height: 0.1), imageWidth: 2055, imageHeight: 1100)
+        try require(bottomRight != nil && bottomRight!.x + bottomRight!.width == 1 && bottomRight!.y + bottomRight!.height == 1, "Right/bottom image bounds were not normalized")
+        let interior = NormalizedImageBox(bottomLeft: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4), imageWidth: 2055, imageHeight: 1100)
+        try require(interior != nil && abs(interior!.x - 0.1) < 1e-12 && abs(interior!.y - 0.4) < 1e-12, "Interior image coordinates moved")
+        for rectangle in [CGRect(x: -0.01, y: 0.2, width: 0.3, height: 0.1), CGRect(x: 0.2, y: 0.99, width: 0.3, height: 0.02), CGRect(x: 0.2, y: 0.2, width: 0, height: 0.1), CGRect(x: Double.nan, y: 0.2, width: 0.3, height: 0.1), CGRect(x: 0.2, y: 0.2, width: Double.infinity, height: 0.1), CGRect(x: -0.0004, y: 0.2, width: 0.0001, height: 0.1)] {
+            try require(NormalizedImageBox(bottomLeft: rectangle, imageWidth: 2055, imageHeight: 1100) == nil, "Malformed or materially outside geometry was accepted")
+        }
+        try require(NormalizedImageBox(bottomLeft: .zero, imageWidth: 0, imageHeight: 1100) == nil, "Invalid image dimensions were accepted")
+
         let config = try JSONDecoder().decode(ModelConfiguration.self, from: Data(#"{"model":"pinned","revision":"commit","pipeline":"fixed-reference"}"#.utf8))
         let reference = String(repeating: "a", count: 64)
         let valid: [String: Any] = ["pcm": Data(repeating: 1, count: 48000).base64EncodedString(), "duration": 1.0,
@@ -94,6 +107,6 @@ import AppKit
             do { try clip(valid.merging(changes) { _, new in new }).validate(config: config, reference: reference); throw ReaderError.service("Accepted invalid audio") }
             catch ReaderError.audio, ReaderError.version, ReaderError.reference { count += 1 }
         }
-        print("PASS \(count) native checks: Chrome connection expiry/recovery, source coordinates, bounded passages, Unicode/CJK, word holds, audio identity and timestamps")
+        print("PASS \(count) native checks: Chrome connection expiry/recovery, source coordinates and raster edges, bounded passages, Unicode/CJK, word holds, audio identity and timestamps")
     }
 }
